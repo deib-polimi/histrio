@@ -1,0 +1,256 @@
+org: redacted
+service: go-actor-system
+provider:
+  name: aws
+  runtime: provided.al2
+  region: eu-west-3
+  memorySize: 1024
+  versionFunctions: false
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - "dynamodb:*"
+        - "lambda:InvokeFunction"
+      Resource:
+        - "*"
+
+#  vpc:
+#    securityGroupIds:
+#      - !GetAtt GoActorSystemSG.GroupId
+#    subnetIds:
+#      - subnet-cf8cd5a6
+
+package:
+  individually: true
+
+functions:
+  ClockSynchronizerTest:
+    name: ClockSynchronizerTest
+    handler: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
+    package:
+      artifact: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
+    maximumRetryAttempts: 0
+    maximumEventAge: 60
+    timeout: 60
+    memorySize: 3008
+
+  Worker:
+    name: Worker
+    handler: handlers/worker/worker.zip
+    package:
+      artifact: handlers/worker/worker.zip
+    maximumRetryAttempts: 0
+    maximumEventAge: 60
+    timeout: 60
+    memorySize: 3008
+    environment:
+      WORKER_DATA: /tmp
+
+  BaselineHotelService:
+    name: BaselineHotelService
+    handler: handlers/baseline-hotelreservation-service/baseline-hotelreservation-service.zip
+    package:
+      artifact: handlers/baseline-hotelreservation-service/baseline-hotelreservation-service.zip
+    maximumRetryAttempts: 0
+    maximumEventAge: 60
+    timeout: 60
+    memorySize: 3008
+
+  BaselineUserService:
+    name: BaselineUserService
+    handler: handlers/baseline-user-service/baseline-user-service.zip
+    package:
+      artifact: handlers/baseline-user-service/baseline-user-service.zip
+    maximumRetryAttempts: 0
+    maximumEventAge: 60
+    timeout: 60
+    memorySize: 3008
+
+  BaselineBankingService:
+    name: BaselineBankingService
+    handler: handlers/baseline-banking-service/baseline-banking-service.zip
+    package:
+      artifact: handlers/baseline-banking-service/baseline-banking-service.zip
+    maximumRetryAttempts: 0
+    maximumEventAge: 60
+    timeout: 60
+    memorySize: 3008
+
+
+resources:
+  Resources:
+# We need to specify: vpc id, subnet id, availability zone
+#    GoActorSystemSG:
+#      Type: AWS::EC2::SecurityGroup
+#      Properties:
+#        GroupDescription: Security group used for the go actor system thesis
+#        GroupName: GoActorSystemSG
+#        SecurityGroupEgress:
+#          - CidrIp: 0.0.0.0/0
+#            Description: Allow all outbound traffic
+#            IpProtocol: "-1"
+#        SecurityGroupIngress:
+#          - CidrIp: 0.0.0.0/0
+#            Description: Allow SSH traffic from everywhere
+#            FromPort: 22
+#            IpProtocol: tcp
+#            ToPort: 22
+#          - CidrIp: 0.0.0.0/0
+#            Description: Allow connection to the clock synchronizer server from everywhere
+#            FromPort: 8080
+#            IpProtocol: tcp
+#            ToPort: 8080
+#        VpcId: vpc-120a387b
+#
+#    SelfReferencingSecurityGroupIngress:
+#      Type: AWS::EC2::SecurityGroupIngress
+#      Properties:
+#        Description: Allow all traffic between nodes of GoActorSystemSG
+#        GroupName: GoActorSystemSG
+#        IpProtocol: "-1"
+#        SourceSecurityGroupId: !GetAtt GoActorSystemSG.GroupId
+
+    ActorTask:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ActorTask
+        AttributeDefinitions:
+          - AttributeName: worker_id
+            AttributeType: S
+          - AttributeName: insertion_time
+            AttributeType: S
+          - AttributeName: phy_partition_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: phy_partition_id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: ActorTaskByWorker
+            KeySchema:
+              - AttributeName: worker_id
+                KeyType: HASH
+              - AttributeName: insertion_time
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    ActorState:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ActorState
+        AttributeDefinitions:
+          - AttributeName: actor_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: actor_id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    ActorInbox:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ActorInbox
+        AttributeDefinitions:
+          - AttributeName: phy_partition_id
+            AttributeType: S
+          - AttributeName: timestamp
+            AttributeType: S
+        KeySchema:
+          - AttributeName: phy_partition_id
+            KeyType: HASH
+          - AttributeName: timestamp
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    WeekAvailability:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: WeekAvailability
+        AttributeDefinitions:
+          - AttributeName: collection_id
+            AttributeType: S
+          - AttributeName: item_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: collection_id
+            KeyType: HASH
+          - AttributeName: item_id
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    Account:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: Account
+        AttributeDefinitions:
+          - AttributeName: collection_id
+            AttributeType: S
+          - AttributeName: item_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: collection_id
+            KeyType: HASH
+          - AttributeName: item_id
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    Partitions:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: Partitions
+        AttributeDefinitions:
+          - AttributeName: partition_name
+            AttributeType: S
+          - AttributeName: shard_id
+            AttributeType: S
+          - AttributeName: allocated_actors_count
+            AttributeType: N
+        KeySchema:
+          - AttributeName: partition_name
+            KeyType: HASH
+          - AttributeName: shard_id
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: ShardsOrderedByActorsCount
+            KeySchema:
+              - AttributeName: partition_name
+                KeyType: HASH
+              - AttributeName: allocated_actors_count
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    Outbox:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: Outbox
+        AttributeDefinitions:
+          - AttributeName: run_id
+            AttributeType: S
+          - AttributeName: correlation_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: run_id
+            KeyType: HASH
+          - AttributeName: correlation_id
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    BaselineTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: BaselineTable
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+

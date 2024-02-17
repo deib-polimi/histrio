@@ -1,0 +1,7 @@
+.vscode/
+log/
+target/
+.idea/
+.serverless/
+bootstrap
+*.zip
