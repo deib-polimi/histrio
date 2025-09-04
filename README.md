@@ -11,3 +11,8 @@ To prepare the data for the experiments run the `binaries/loader.go` tool.
 
 Tests follow the standard go test structure https://go.dev/doc/tutorial/add-a-test and additional tools for benchmarking the system are under the `benchmark/` directory
 
+# Code structure
+
+- `worker` contains the core source code of Histrio
+    - `infrastructure` contains the infrastructural components of the system: the worker and its stations
+    - `domain` contains the actor programming model components that get executed within the infrastructure code

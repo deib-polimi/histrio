@@ -20,9 +20,10 @@ type TaskDao interface {
 }
 
 type TaskStatus struct {
-	PhyPartitionId    PhysicalPartitionId
-	IsSealed          bool
-	IsActorPassivated bool
+	PhyPartitionId PhysicalPartitionId
+	WorkerId       string
+	IsSealed       bool
+	IsActive       bool
 }
 
 type ActorManagerDao interface {
@@ -102,6 +103,7 @@ type NotificationStorage interface {
 	RemoveNotification(notification Notification) error
 	RemoveAllNotifications(notification ...Notification) error
 	GetAllNotifications() []Notification
+	GetAllWorkers() []string
 	Close() error
 }
 
@@ -111,6 +113,7 @@ type NotificationStorageFactory interface {
 
 type Notification struct {
 	PhyPartitionId PhysicalPartitionId
+	WorkerId       string
 }
 
 type CollectionId struct {

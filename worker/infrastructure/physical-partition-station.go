@@ -1,17 +1,19 @@
 package infrastructure
 
 import (
-	"golang.org/x/exp/maps"
 	"log"
 	"main/utils"
 	"main/worker/domain"
 	"sort"
 	"time"
+
+	"golang.org/x/exp/maps"
 )
 
 type PhysicalPartitionStation struct {
 	periodicSignal                     <-chan time.Time
-	pollingSignal                      <-chan time.Time
+	pollInboxSignal                    <-chan time.Time
+	notifySignal                       <-chan time.Time
 	newPhyPartitionsQueue              <-chan []domain.PhysicalPartitionManager
 	newPhyPartitionsFromParkingQueue   <-chan domain.PhysicalPartitionManager
 	passivatedPhyPartitionsCountSignal <-chan int
@@ -41,7 +43,7 @@ type PhysicalPartitionStation struct {
 }
 
 func NewPhysicalPartitionStation(
-	periodicSignal <-chan time.Time, pollingSignal <-chan time.Time, newPhyPartitionsQueue <-chan []domain.PhysicalPartitionManager,
+	periodicSignal <-chan time.Time, pollInboxSignal <-chan time.Time, notifySignal <-chan time.Time, newPhyPartitionsQueue <-chan []domain.PhysicalPartitionManager,
 	newPhyPartitionsFromParkingQueue <-chan domain.PhysicalPartitionManager, passivatedPhyPartitionsCountSignal <-chan int,
 	completedActorManagersQueue <-chan domain.ActorManager, processingQueue chan<- domain.ActorManager,
 	parkingQueue chan<- domain.PhysicalPartitionManager, pullingStationSignal chan<- ShardPullRequest,
@@ -52,7 +54,8 @@ func NewPhysicalPartitionStation(
 	useBackoffStrategy bool, idleMillisecondsToWaitBeforeParking int64) *PhysicalPartitionStation {
 	return &PhysicalPartitionStation{
 		periodicSignal:                               periodicSignal,
-		pollingSignal:                                pollingSignal,
+		pollInboxSignal:                              pollInboxSignal,
+		notifySignal:                                 notifySignal,
 		newPhyPartitionsQueue:                        newPhyPartitionsQueue,
 		newPhyPartitionsFromParkingQueue:             newPhyPartitionsFromParkingQueue,
 		passivatedPhyPartitionsCountSignal:           passivatedPhyPartitionsCountSignal,
@@ -142,11 +145,19 @@ func (ps *PhysicalPartitionStation) Start() {
 				stop = true
 			}
 
-		case tPolling := <-ps.pollingSignal:
+		case tPolling := <-ps.pollInboxSignal:
 			//send the request to poll from all inboxes
 			for _, locus := range ps.phyPartitionsLoci {
 				select {
-				case locus.slot.periodicSignal <- tPolling:
+				case locus.slot.pollInboxSignal <- tPolling:
+				default:
+				}
+			}
+
+		case tPolling := <-ps.notifySignal:
+			for _, locus := range ps.phyPartitionsLoci {
+				select {
+				case locus.slot.pollInboxSignal <- tPolling:
 				default:
 				}
 			}
@@ -249,7 +260,7 @@ func (p *physicalPartitionReleaseRequest) contains(id domain.PhysicalPartitionId
 
 type physicalPartitionSlot struct {
 	completedActorManagersQueue chan domain.ActorManager
-	periodicSignal              chan time.Time
+	pollInboxSignal             chan time.Time
 	terminationSignal           chan struct{}
 
 	processingQueue               chan<- domain.ActorManager
@@ -275,7 +286,7 @@ func newPhysicalPartitionSlot(
 	idleMillisecondsToWaitBeforeParking int64) *physicalPartitionSlot {
 	return &physicalPartitionSlot{
 		completedActorManagersQueue:         make(chan domain.ActorManager, 10000),
-		periodicSignal:                      make(chan time.Time),
+		pollInboxSignal:                     make(chan time.Time),
 		terminationSignal:                   make(chan struct{}),
 		processingQueue:                     processingQueue,
 		activeActorsCountUpdateSignal:       activeActorsCountUpdateSignal,
@@ -298,7 +309,7 @@ func (ps *physicalPartitionSlot) Start() {
 			}
 
 			select {
-			case <-ps.periodicSignal: //polling inboxes and check for phyPartition termination
+			case <-ps.pollInboxSignal: //polling inboxes and check for phyPartition termination
 				canPoll := true
 				if ps.useBackoffStrategy {
 					canPoll = !ps.needsToStop && ps.backoffCyclesToWait == 0

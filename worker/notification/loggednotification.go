@@ -1,4 +1,4 @@
-package storageimpl
+package notification
 
 import (
 	"bufio"
@@ -85,6 +85,15 @@ func (l *LoggedNotificationStorage) GetAllNotifications() []domain.Notification 
 
 	return notifications
 }
+func (l *LoggedNotificationStorage) GetAllWorkers() []string {
+	var w = utils.NewMapSet[string]()
+	l.notifications.ForEach(func(notification domain.Notification) bool {
+		w.Add(notification.WorkerId)
+		return false
+	})
+
+	return w.ToSlice()
+}
 
 func (l *LoggedNotificationStorage) Close() error {
 	return l.logFile.Close()
@@ -104,11 +113,12 @@ func (l *LoggedNotificationStorage) sync() error {
 		}
 
 		phyPartitionId, _ := domain.StrToPhyPartitionId(line[1:])
-		if line[0] == '+' {
+		switch line[0] {
+		case '+':
 			l.notifications.Add(domain.Notification{PhyPartitionId: phyPartitionId})
-		} else if line[0] == '-' {
+		case '-':
 			l.notifications.Remove(domain.Notification{PhyPartitionId: phyPartitionId})
-		} else {
+		default:
 			log.Fatalf("Found a corrupted log while synching")
 		}
 

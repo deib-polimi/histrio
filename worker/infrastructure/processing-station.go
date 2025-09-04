@@ -4,6 +4,7 @@ import (
 	"log"
 	"main/utils"
 	"main/worker/domain"
+	"main/worker/notification"
 	"strconv"
 	"time"
 )
@@ -17,6 +18,7 @@ type ProcessingStation struct {
 
 	taskDao                    domain.TaskDao
 	notificationStorageFactory domain.NotificationStorageFactory
+	amqpUrl                    string
 	retryFactory               func() *utils.Retrier[struct{}]
 }
 
@@ -25,6 +27,7 @@ func NewProcessingStation(
 	processingSlotsCount int, maxMessageProcessingRetries int,
 	taskDao domain.TaskDao,
 	notificationStorageFactory domain.NotificationStorageFactory,
+	amqpUrl string,
 	retryFactory func() *utils.Retrier[struct{}]) *ProcessingStation {
 	return &ProcessingStation{
 		processingQueue:             processingQueue,
@@ -33,13 +36,32 @@ func NewProcessingStation(
 		maxMessageProcessingRetries: maxMessageProcessingRetries,
 		taskDao:                     taskDao,
 		notificationStorageFactory:  notificationStorageFactory,
+		amqpUrl:                     amqpUrl,
 		retryFactory:                retryFactory,
 	}
 }
 
 func (ps *ProcessingStation) Start() {
+
+	notifier, err := notification.NewMQNotifier(ps.amqpUrl)
+	if err != nil {
+		log.Fatalf("Couldn't start AMQP Notifier")
+	}
+
+	activateWorkers := make(chan string)
+
+	go amqpNotifier(notifier, activateWorkers)
+
 	for i := range ps.processingSlotsCount {
-		go processSlot(ps.processingQueue, ps.completedActorManagersQueue, ps.taskDao, ps.notificationStorageFactory.BuildNotificationStorage(strconv.Itoa(i)), ps.maxMessageProcessingRetries, ps.retryFactory())
+		go processSlot(
+			ps.processingQueue,
+			ps.completedActorManagersQueue,
+			ps.taskDao,
+			ps.notificationStorageFactory.BuildNotificationStorage(strconv.Itoa(i)),
+			activateWorkers,
+			ps.maxMessageProcessingRetries,
+			ps.retryFactory(),
+		)
 	}
 }
 
@@ -48,6 +70,7 @@ func processSlot(
 	completedActorManagersQueue chan<- domain.ActorManager,
 	taskDao domain.TaskDao,
 	notificationStorage domain.NotificationStorage,
+	activateWorkers chan<- string,
 	maxMessageProcessingRetries int,
 	retrier *utils.Retrier[struct{}]) {
 
@@ -60,83 +83,44 @@ func processSlot(
 			if err != nil {
 				log.Printf("Actor failed to process message: %v\n", err)
 				consecutiveRetries++
-			} else {
-				//notificationLoggingStartTime := time.Now()
-				recipientsIds.ForEach(func(recipientId domain.PhysicalPartitionId) bool {
-					err = notificationStorage.AddNotification(domain.Notification{PhyPartitionId: recipientId})
-					return err != nil
-				})
-				//log.Printf("Logging notification delay [%v]: %v\n", actorManager.GetActorId(), time.Since(notificationLoggingStartTime))
-				if err != nil { //failed to log a notification
-					log.Printf("Notification loggin failed: %v\n", err)
-					consecutiveRetries++
-					actorManager.ForceMessageProcessingRollback()
+
+				if consecutiveRetries > maxMessageProcessingRetries {
+					log.Fatalf("too many retries for actor %v", actorManager.GetActorId())
 				} else {
-					transactionStartTime := time.Now()
-					_, transactionErr := retrier.DoWithReturn(func() (struct{}, error) {
-						return struct{}{}, actorManager.CommitMessageProcessing()
-					})
-					log.Printf("Transaction delay [%v]: %v\n", actorManager.GetActorId(), time.Since(transactionStartTime))
-					if transactionErr != nil { //failed to commit transaction
-						log.Printf("Transaction failed: %v\n", err)
-						consecutiveRetries++
-					} else {
-						consecutiveRetries = 0
-					}
+					continue
+				}
+			}
+			//notificationLoggingStartTime := time.Now()
+			recipientsIds.ForEach(func(recipientId domain.PhysicalPartitionId) bool {
+				err = notificationStorage.AddNotification(domain.Notification{PhyPartitionId: recipientId})
+				return err != nil
+			})
+			//log.Printf("Logging notification delay [%v]: %v\n", actorManager.GetActorId(), time.Since(notificationLoggingStartTime))
+			if err != nil { //failed to log a notification
+				log.Printf("Notification logging failed: %v\n", err)
+				consecutiveRetries++
+				actorManager.ForceMessageProcessingRollback()
+			} else {
+				transactionStartTime := time.Now()
+				_, transactionErr := retrier.DoWithReturn(func() (struct{}, error) {
+					return struct{}{}, actorManager.CommitMessageProcessing()
+				})
+				log.Printf("Transaction delay [%v]: %v\n", actorManager.GetActorId(), time.Since(transactionStartTime))
+				if transactionErr != nil { //failed to commit transaction
+					log.Printf("Transaction failed: %v\n", err)
+					consecutiveRetries++
+				} else {
+					consecutiveRetries = 0
 				}
 			}
 
-			if consecutiveRetries > maxMessageProcessingRetries {
-				log.Fatalf("too many retries for actor %v", actorManager.GetActorId())
-			}
-
 		}
 
-		notifications := notificationStorage.GetAllNotifications()
+		workers := notificationStorage.GetAllWorkers()
+		activateNotifications(notificationStorage, taskDao)
 
-		//map-reduce to flush notifications
-		type notificationResult struct {
-			phyPartitionId  domain.PhysicalPartitionId
-			hasBeenNotified bool
-		}
-
-		inputQueue := make(chan domain.Notification, len(notifications))
-		outputQueue := make(chan notificationResult, len(notifications))
-		maxConcurrentNotifiers := min(20, len(notifications))
-
-		//producer
-		go func() {
-			for _, notification := range notifications {
-				inputQueue <- notification
-			}
-			close(inputQueue)
-		}()
-
-		//mappers
-		for range maxConcurrentNotifiers {
-			go func() {
-				for notification := range inputQueue {
-					success := tryActivatePhyPartitionIfPassivated(notification.PhyPartitionId, taskDao)
-					outputQueue <- notificationResult{phyPartitionId: notification.PhyPartitionId, hasBeenNotified: success}
-				}
-			}()
-		}
-
-		var successfullyProcessedNotifications []domain.Notification
-
-		for range len(notifications) {
-			result := <-outputQueue
-			if result.hasBeenNotified {
-				successfullyProcessedNotifications = append(successfullyProcessedNotifications, domain.Notification{PhyPartitionId: result.phyPartitionId})
-			}
-		}
-
-		//flushingNotificationsStartTime := time.Now()
-		err := notificationStorage.RemoveAllNotifications(successfullyProcessedNotifications...)
-		//log.Printf("Flushing notifications delay [%v]: %v\n", actorManager.GetActorId(), time.Since(flushingNotificationsStartTime))
-
-		if err != nil {
-			log.Printf("could not remove all notifications: %v\n", err)
+		for _, worker := range workers {
+			activateWorkers <- worker
 		}
 
 		completedActorManagersQueue <- actorManager
@@ -149,8 +133,59 @@ func processSlot(
 
 }
 
+func amqpNotifier(notifier *notification.MQNotifier, activateWorkers <-chan string) {
+	for w := range activateWorkers {
+		notifier.Notify(w)
+	}
+}
+
+func activateNotifications(notificationStorage domain.NotificationStorage, taskDao domain.TaskDao) {
+	notifications := notificationStorage.GetAllNotifications()
+
+	//map-reduce to flush notifications
+	type notificationResult struct {
+		phyPartitionId  domain.PhysicalPartitionId
+		hasBeenNotified bool
+	}
+
+	inputQueue := make(chan domain.Notification, len(notifications))
+	outputQueue := make(chan notificationResult, len(notifications))
+	maxConcurrentNotifiers := min(20, len(notifications))
+
+	for range maxConcurrentNotifiers {
+		go func() {
+			for notification := range inputQueue {
+				success := tryActivatePhyPartition(notification.PhyPartitionId, taskDao)
+				outputQueue <- notificationResult{phyPartitionId: notification.PhyPartitionId, hasBeenNotified: success}
+			}
+		}()
+	}
+
+	for _, notification := range notifications {
+		inputQueue <- notification
+	}
+	close(inputQueue)
+
+	var successfullyProcessedNotifications []domain.Notification
+
+	for range len(notifications) {
+		result := <-outputQueue
+		if result.hasBeenNotified {
+			successfullyProcessedNotifications = append(successfullyProcessedNotifications, domain.Notification{PhyPartitionId: result.phyPartitionId})
+		}
+	}
+
+	//flushingNotificationsStartTime := time.Now()
+	err := notificationStorage.RemoveAllNotifications(successfullyProcessedNotifications...)
+	//log.Printf("Flushing notifications delay [%v]: %v\n", actorManager.GetActorId(), time.Since(flushingNotificationsStartTime))
+
+	if err != nil {
+		log.Printf("could not remove all notifications: %v\n", err)
+	}
+}
+
 // if the function returns true the actor is active at the end of the call
-func tryActivatePhyPartitionIfPassivated(phyPartitionId domain.PhysicalPartitionId, taskDao domain.TaskDao) bool {
+func tryActivatePhyPartition(phyPartitionId domain.PhysicalPartitionId, taskDao domain.TaskDao) bool {
 	taskStatus, err := taskDao.GetTaskStatus(phyPartitionId)
 	if err != nil {
 		return false
@@ -160,7 +195,7 @@ func tryActivatePhyPartitionIfPassivated(phyPartitionId domain.PhysicalPartition
 		return false
 	}
 
-	if !taskStatus.IsActorPassivated {
+	if taskStatus.IsActive {
 		return true
 	}
 

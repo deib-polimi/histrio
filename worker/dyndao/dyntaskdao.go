@@ -2,13 +2,14 @@ package dyndao
 
 import (
 	"context"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"log"
 	"main/worker/domain"
 	"strconv"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 type DynTaskDao struct {
@@ -138,7 +139,7 @@ func (dao *DynTaskDao) GetTaskStatus(phyPartitionId domain.PhysicalPartitionId) 
 			"phy_partition_id": &types.AttributeValueMemberS{Value: phyPartitionId.String()},
 		},
 		ConsistentRead:       aws.Bool(true),
-		ProjectionExpression: aws.String("is_sealed"),
+		ProjectionExpression: aws.String("is_sealed, worker_id"),
 	})
 
 	if err != nil {
@@ -146,9 +147,11 @@ func (dao *DynTaskDao) GetTaskStatus(phyPartitionId domain.PhysicalPartitionId) 
 	}
 
 	if task.Item == nil {
-		return domain.TaskStatus{PhyPartitionId: phyPartitionId, IsActorPassivated: true}, nil
+		return domain.TaskStatus{PhyPartitionId: phyPartitionId, IsActive: false}, nil
 	} else {
-		return domain.TaskStatus{PhyPartitionId: phyPartitionId, IsSealed: task.Item["is_sealed"].(*types.AttributeValueMemberBOOL).Value}, nil
+		workerId := task.Item["worker_id"].(*types.AttributeValueMemberS).Value
+		isSealed := task.Item["is_sealed"].(*types.AttributeValueMemberBOOL).Value
+		return domain.TaskStatus{PhyPartitionId: phyPartitionId, WorkerId: workerId, IsActive: true, IsSealed: isSealed}, nil
 	}
 }
 

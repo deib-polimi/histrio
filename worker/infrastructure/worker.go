@@ -1,19 +1,22 @@
 package infrastructure
 
 import (
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"log"
 	"main/utils"
 	"main/worker/domain"
 	"main/worker/dyndao"
-	"main/worker/storageimpl"
+	"main/worker/notification"
 	"reflect"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 type Worker struct {
 	periodicSignal        <-chan time.Time
-	pollingSignal         <-chan time.Time
+	pollInboxSignal       <-chan time.Time
 	parkingPeriodicSignal <-chan time.Time
+	notifySignal          <-chan time.Time
 
 	workerId                                     string
 	runId                                        string
@@ -30,11 +33,12 @@ type Worker struct {
 	phyPartitionManagerFactory domain.PhysicalPartitionManagerFactory
 	notificationStorageFactory domain.NotificationStorageFactory
 
+	amqpUrl        string
 	retrierFactory func() *utils.Retrier[struct{}]
 }
 
-func NewWorker(periodicSignal <-chan time.Time, pollingSignal <-chan time.Time, passivationSignal <-chan time.Time, workerId string, runId string, maxActorsCount int, maximumConcurrentShardPullsCount int, maxConcurrentProcessingActors int, maxMessageProcessingRetries int, maximumSubsequentEmptyPhyPartitionsPullCount int, useBackoffStrategy bool, idleMillisecondsToWaitBeforeParking int64, passivationIntervalMillis int64, taskDao domain.TaskDao, phyPartitionManagerFactory domain.PhysicalPartitionManagerFactory, notificationStorageFactory domain.NotificationStorageFactory, retrierFactory func() *utils.Retrier[struct{}]) *Worker {
-	return &Worker{periodicSignal: periodicSignal, pollingSignal: pollingSignal, parkingPeriodicSignal: passivationSignal, workerId: workerId, runId: runId, maxActorsCount: maxActorsCount, maximumConcurrentShardPullsCount: maximumConcurrentShardPullsCount, maxConcurrentProcessingActors: maxConcurrentProcessingActors, maxMessageProcessingRetries: maxMessageProcessingRetries, maximumSubsequentEmptyPhyPartitionsPullCount: maximumSubsequentEmptyPhyPartitionsPullCount, useBackoffStrategy: useBackoffStrategy, idleMillisecondsToWaitBeforeParking: idleMillisecondsToWaitBeforeParking, passivationIntervalMillis: passivationIntervalMillis, taskDao: taskDao, phyPartitionManagerFactory: phyPartitionManagerFactory, notificationStorageFactory: notificationStorageFactory, retrierFactory: retrierFactory}
+func NewWorker(periodicSignal <-chan time.Time, pollInboxSignal <-chan time.Time, passivationSignal <-chan time.Time, notifySignal <-chan time.Time, workerId string, runId string, maxActorsCount int, maximumConcurrentShardPullsCount int, maxConcurrentProcessingActors int, maxMessageProcessingRetries int, maximumSubsequentEmptyPhyPartitionsPullCount int, useBackoffStrategy bool, idleMillisecondsToWaitBeforeParking int64, passivationIntervalMillis int64, taskDao domain.TaskDao, phyPartitionManagerFactory domain.PhysicalPartitionManagerFactory, notificationStorageFactory domain.NotificationStorageFactory, retrierFactory func() *utils.Retrier[struct{}]) *Worker {
+	return &Worker{periodicSignal: periodicSignal, pollInboxSignal: pollInboxSignal, parkingPeriodicSignal: passivationSignal, notifySignal: notifySignal, workerId: workerId, runId: runId, maxActorsCount: maxActorsCount, maximumConcurrentShardPullsCount: maximumConcurrentShardPullsCount, maxConcurrentProcessingActors: maxConcurrentProcessingActors, maxMessageProcessingRetries: maxMessageProcessingRetries, maximumSubsequentEmptyPhyPartitionsPullCount: maximumSubsequentEmptyPhyPartitionsPullCount, useBackoffStrategy: useBackoffStrategy, idleMillisecondsToWaitBeforeParking: idleMillisecondsToWaitBeforeParking, passivationIntervalMillis: passivationIntervalMillis, taskDao: taskDao, phyPartitionManagerFactory: phyPartitionManagerFactory, notificationStorageFactory: notificationStorageFactory, retrierFactory: retrierFactory}
 }
 
 func (w *Worker) Run() {
@@ -49,7 +53,8 @@ func (w *Worker) Run() {
 
 	phyPartitionsStation := NewPhysicalPartitionStation(
 		w.periodicSignal,
-		w.pollingSignal,
+		w.pollInboxSignal,
+		w.notifySignal,
 		newPhyPartitionsQueue,
 		newPhyPartitionsFromParkingQueue,
 		passivatedPhyPartitionsCountSignal,
@@ -89,6 +94,7 @@ func (w *Worker) Run() {
 		w.maxMessageProcessingRetries,
 		w.taskDao,
 		w.notificationStorageFactory,
+		w.amqpUrl,
 		w.retrierFactory,
 	)
 
@@ -104,6 +110,7 @@ type WorkerParameters struct {
 	WorkerId                                     string
 	RunId                                        string
 	BaseClockSynchronizerUrl                     string
+	amqpUrl                                      string
 	MaxActorsCount                               int
 	MaximumConcurrentShardPullsCount             int
 	MaxConcurrentProcessingActors                int
@@ -185,15 +192,27 @@ func BuildNewWorker(params *WorkerParameters, client *dynamodb.Client, timestamp
 	phyPartitionManagerFactory := dyndao.NewPhysicalPartitionManagerFactoryImpl(client, params.WorkerId, entityLoader, timestampCollectorFactory, retrierFactory)
 
 	periodicTimer := time.NewTicker(time.Duration(params.PeriodicTimerMillis) * time.Millisecond)
-	pollingTimer := time.NewTicker(time.Duration(params.PollingTimerMillis) * time.Millisecond)
+	pollInboxTimer := time.NewTicker(time.Duration(params.PollingTimerMillis) * time.Millisecond)
 	passivatingTimer := time.NewTicker(time.Duration(params.PassivatingTimerMillis) * time.Millisecond)
+	notifySignal := make(chan time.Time)
 
-	notificationStorageFactory := storageimpl.NewNotificationStorageFactoryImpl(params.WorkerId)
+	notifier, err := notification.NewMQReceiver(params.amqpUrl, params.WorkerId)
+
+	if err != nil {
+		log.Fatalf("failed to create AMQP notifier")
+	}
+
+	go func() {
+		notifier.Start(notifySignal)
+	}()
+
+	notificationStorageFactory := notification.NewNotificationStorageFactoryImpl(params.WorkerId)
 
 	return NewWorker(
 		periodicTimer.C,
-		pollingTimer.C,
+		pollInboxTimer.C,
 		passivatingTimer.C,
+		notifySignal,
 		params.WorkerId,
 		params.RunId,
 		params.MaxActorsCount,
