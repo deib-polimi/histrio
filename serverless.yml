@@ -1,4 +1,4 @@
-org: redacted
+org: polimi
 service: go-actor-system
 provider:
   name: aws
@@ -24,15 +24,15 @@ package:
   individually: true
 
 functions:
-  ClockSynchronizerTest:
-    name: ClockSynchronizerTest
-    handler: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
-    package:
-      artifact: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
-    maximumRetryAttempts: 0
-    maximumEventAge: 60
-    timeout: 60
-    memorySize: 3008
+  # ClockSynchronizerTest:
+  #   name: ClockSynchronizerTest
+  #   handler: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
+  #   package:
+  #     artifact: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
+  #   maximumRetryAttempts: 0
+  #   maximumEventAge: 60
+  #   timeout: 60
+  #   memorySize: 3008
 
   Worker:
     name: Worker
@@ -45,6 +45,9 @@ functions:
     memorySize: 3008
     environment:
       WORKER_DATA: /tmp
+      RABBITMQ_URL: !Select [0, !GetAtt HistrioRabbitMQBroker.AmqpEndpoints]
+      RABBITMQ_PASSWORD: !Sub "{{resolve:secretsmanager:${HistrioMQPassword}}}"
+      RABBITMQ_USERNAME: histrio-mq
 
   BaselineHotelService:
     name: BaselineHotelService
@@ -254,3 +257,24 @@ resources:
             KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
 
+    HistrioMQPassword:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        GenerateSecretString:
+          ExcludePunctuation: true
+          IncludeSpace: false
+          PasswordLength: 20
+
+    HistrioRabbitMQBroker:
+      Type: AWS::AmazonMQ::Broker
+      Properties:
+        BrokerName: histrio-broker
+        EngineType: RABBITMQ
+        HostInstanceType: mq.t3.micro
+        EngineVersion: "3.13"
+        AutoMinorVersionUpgrade: true
+        DeploymentMode: SINGLE_INSTANCE
+        PubliclyAccessible: true
+        Users:
+          - Username: histrio-mq
+            Password: !Sub "{{resolve:secretsmanager:${HistrioMQPassword}}}"

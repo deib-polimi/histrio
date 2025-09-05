@@ -6,6 +6,7 @@ import (
 	"main/worker/domain"
 	"main/worker/notification"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -116,12 +117,7 @@ func processSlot(
 
 		}
 
-		workers := notificationStorage.GetAllWorkers()
-		activateNotifications(notificationStorage, taskDao)
-
-		for _, worker := range workers {
-			activateWorkers <- worker
-		}
+		activateNotifications(notificationStorage, taskDao, activateWorkers)
 
 		completedActorManagersQueue <- actorManager
 	}
@@ -139,7 +135,7 @@ func amqpNotifier(notifier *notification.MQNotifier, activateWorkers <-chan stri
 	}
 }
 
-func activateNotifications(notificationStorage domain.NotificationStorage, taskDao domain.TaskDao) {
+func activateNotifications(notificationStorage domain.NotificationStorage, taskDao domain.TaskDao, activateWorkers chan<- string) {
 	notifications := notificationStorage.GetAllNotifications()
 
 	//map-reduce to flush notifications
@@ -150,26 +146,42 @@ func activateNotifications(notificationStorage domain.NotificationStorage, taskD
 
 	inputQueue := make(chan domain.Notification, len(notifications))
 	outputQueue := make(chan notificationResult, len(notifications))
+	workers := make(chan string, len(notifications))
 	maxConcurrentNotifiers := min(20, len(notifications))
-
-	for range maxConcurrentNotifiers {
-		go func() {
-			for notification := range inputQueue {
-				success := tryActivatePhyPartition(notification.PhyPartitionId, taskDao)
-				outputQueue <- notificationResult{phyPartitionId: notification.PhyPartitionId, hasBeenNotified: success}
-			}
-		}()
-	}
+	var wg sync.WaitGroup
 
 	for _, notification := range notifications {
 		inputQueue <- notification
 	}
 	close(inputQueue)
 
+	for range maxConcurrentNotifiers {
+		if len(inputQueue) == 0 {
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for notification := range inputQueue {
+				success, workerId := tryActivatePhyPartition(notification.PhyPartitionId, taskDao)
+				outputQueue <- notificationResult{phyPartitionId: notification.PhyPartitionId, hasBeenNotified: success}
+
+				if workerId != "" && workerId != "NULL" {
+					workers <- workerId
+				}
+			}
+		}()
+
+	}
+
+	wg.Wait()
+
+	close(outputQueue)
+	close(workers)
+
 	var successfullyProcessedNotifications []domain.Notification
 
-	for range len(notifications) {
-		result := <-outputQueue
+	for result := range outputQueue {
 		if result.hasBeenNotified {
 			successfullyProcessedNotifications = append(successfullyProcessedNotifications, domain.Notification{PhyPartitionId: result.phyPartitionId})
 		}
@@ -182,21 +194,31 @@ func activateNotifications(notificationStorage domain.NotificationStorage, taskD
 	if err != nil {
 		log.Printf("could not remove all notifications: %v\n", err)
 	}
+
+	uniqueWorkers := utils.NewMapSet[string]()
+	for w := range workers {
+		uniqueWorkers.Add(w)
+	}
+
+	uniqueWorkers.ForEach(func(w string) bool {
+		activateWorkers <- w
+		return false
+	})
 }
 
 // if the function returns true the actor is active at the end of the call
-func tryActivatePhyPartition(phyPartitionId domain.PhysicalPartitionId, taskDao domain.TaskDao) bool {
+func tryActivatePhyPartition(phyPartitionId domain.PhysicalPartitionId, taskDao domain.TaskDao) (bool, string) {
 	taskStatus, err := taskDao.GetTaskStatus(phyPartitionId)
 	if err != nil {
-		return false
+		return false, ""
 	}
 
 	if taskStatus.IsSealed {
-		return false
+		return false, taskStatus.WorkerId
 	}
 
 	if taskStatus.IsActive {
-		return true
+		return true, taskStatus.WorkerId
 	}
 
 	// the actor was passivated, so we need to activate it
@@ -205,5 +227,5 @@ func tryActivatePhyPartition(phyPartitionId domain.PhysicalPartitionId, taskDao 
 	if err != nil {
 		log.Printf("could not add task: %v", err)
 	}
-	return err != nil
+	return err != nil, ""
 }

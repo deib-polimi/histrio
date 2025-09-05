@@ -80,6 +80,7 @@ func (ps *PhysicalPartitionStation) Start() {
 	stop := false
 	isRecovered := false
 	isRecovering := false
+	// lastAct := time.Now()
 	for {
 		if stop {
 			break
@@ -155,6 +156,8 @@ func (ps *PhysicalPartitionStation) Start() {
 			}
 
 		case tPolling := <-ps.notifySignal:
+			// log.Printf("Activated from AMQP after %dms", time.Since(lastAct).Milliseconds())
+			// lastAct = time.Now()
 			for _, locus := range ps.phyPartitionsLoci {
 				select {
 				case locus.slot.pollInboxSignal <- tPolling:

@@ -199,7 +199,7 @@ func BuildNewWorker(params *WorkerParameters, client *dynamodb.Client, timestamp
 	notifier, err := notification.NewMQReceiver(params.amqpUrl, params.WorkerId)
 
 	if err != nil {
-		log.Fatalf("failed to create AMQP notifier")
+		log.Fatalf("failed to create AMQP notifier %s", err)
 	}
 
 	go func() {

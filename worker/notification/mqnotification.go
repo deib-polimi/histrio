@@ -1,9 +1,12 @@
 package notification
 
 import (
+	"fmt"
 	"log"
 	"main/utils"
 	"main/worker/domain"
+	"os"
+	"strings"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -18,8 +21,30 @@ type MQNotifier struct {
 	// q             amqp.Queue
 }
 
+func rabbitMqUrl() (string, error) {
+	rabbitmqURL := os.Getenv("RABBITMQ_URL")
+	username := os.Getenv("RABBITMQ_USERNAME")
+	password := os.Getenv("RABBITMQ_PASSWORD")
+
+	if rabbitmqURL == "" || username == "" || password == "" {
+		return "", fmt.Errorf("missing required environment variables")
+	}
+
+	connectionString := strings.Replace(rabbitmqURL, "amqps://", fmt.Sprintf("amqps://%s:%s@", username, password), 1)
+
+	log.Printf("connection url: %s", connectionString)
+
+	return connectionString, nil
+}
+
 func NewMQNotifier(amqpUrl string) (*MQNotifier, error) {
-	conn, err := amqp.Dial(amqpUrl)
+	url, err := rabbitMqUrl()
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := amqp.Dial(url)
+
 	if err != nil {
 		return nil, err
 	}
@@ -62,6 +87,7 @@ func (l *MQNotifier) Notify(workers ...string) error {
 				Body:        []byte{},
 			},
 		)
+		log.Printf("AMQP sent notification to %s on exchange %s", worker, EXCHANGE)
 
 		if err != nil {
 			return err
@@ -84,7 +110,12 @@ type MQReceiver struct {
 }
 
 func NewMQReceiver(amqpUrl string, workerId string) (*MQReceiver, error) {
-	conn, err := amqp.Dial(amqpUrl)
+	url, err := rabbitMqUrl()
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := amqp.Dial(url)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +154,7 @@ func NewMQReceiver(amqpUrl string, workerId string) (*MQReceiver, error) {
 		return nil, err
 	}
 
+	log.Printf("AMQP bound queue %s to topic %s on exchange %s", q.Name, workerId, EXCHANGE)
 	return &MQReceiver{
 		conn: conn,
 		ch:   ch,
@@ -132,6 +164,7 @@ func NewMQReceiver(amqpUrl string, workerId string) (*MQReceiver, error) {
 }
 
 func (l *MQReceiver) Start(outputChannel chan<- time.Time) error {
+	log.Printf("AMQP started receiver for queue %s", l.q.Name)
 	msgs, err := l.ch.Consume(
 		l.q.Name, // queue
 		"",       // consumer
@@ -147,6 +180,7 @@ func (l *MQReceiver) Start(outputChannel chan<- time.Time) error {
 
 	for d := range msgs {
 		if d.ContentType == "notification" {
+			log.Printf("AMQP notification")
 			outputChannel <- time.Now()
 		} else {
 			log.Printf("Invalid content type for notification")

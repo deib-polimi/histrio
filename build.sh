@@ -8,17 +8,27 @@ export CGO_ENABLED="0"
 # Define the handlers base path relative to the current directory
 handlersBasePath="./handlers"
 
+# Function to compile a single handler
+compile_handler() {
+    local handlerPath="$1"
+    local handlerName=$(basename "$handlerPath")
+    
+    # Build the Go program
+    go build -o "$handlerPath/bootstrap" "$handlerPath/$handlerName.go"
+    
+    # Create a zip file with bootstrap at the root
+    zip -j "$handlersBasePath/$handlerName/$handlerName.zip" "$handlerPath/bootstrap"
+    
+    # Remove the bootstrap file
+    rm "$handlerPath/bootstrap"
+}
+
 # Loop through each handler in the handlers directory
-for handlerName in "$handlersBasePath"/*; do
+for handlerPath in "$handlersBasePath"/*; do
     # Check if it's a directory
-    if [ -d "$handlerName" ]; then
-        # Build the Go program
-        go build -o "$handlerName/bootstrap" "$handlerName/$(basename "$handlerName").go"
-
-        # Create a zip file with bootstrap at the root
-        zip -j "$handlersBasePath/$(basename "$handlerName").zip" "$handlerName/bootstrap"
-
-        # Remove the bootstrap file
-        rm "$handlerName/bootstrap"
+    if [ -d "$handlerPath" ]; then
+        compile_handler $handlerPath &
     fi
 done
+
+wait

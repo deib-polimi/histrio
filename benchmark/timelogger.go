@@ -85,6 +85,8 @@ func (tl *RequestTimeLoggerImpl) dispatch(request Request) {
 
 type TimeLogger struct {
 	volatileRecords map[string]Record
+	count           int
+	errors          int
 	file            *os.File
 }
 
@@ -96,26 +98,31 @@ func NewTimeLogger(filePath string, logIdentifier string) *TimeLogger {
 }
 
 func (tl *TimeLogger) processRequest(request Request) {
-	if request.requestType == START {
+	switch request.requestType {
+	case START:
 		tl.volatileRecords[request.identifier] = Record{
 			identifier:       request.identifier,
 			startRequestTime: request.timestamp,
 		}
-	} else if request.requestType == END {
+	case END:
 		record, ok := tl.volatileRecords[request.identifier]
 		if !ok {
-			log.Printf("Could not find the start request for '%v'\n", request.identifier)
+			tl.errors += 1
+			log.Printf("Could not find the start request for '%v' (%3.1f %% errors)\n", request.identifier, 100.0*float32(tl.errors)/float32(tl.errors+tl.count))
 			return
 		}
 		(&record).endRequestTime = request.timestamp
 		err := writeRecordToFile(tl.file, record)
 		if err != nil {
+			tl.errors += 1
 			log.Printf("Could not log end timestamp for request '%v': %v\n", request.identifier, err)
 			return
 		}
+		tl.count += 1
 		delete(tl.volatileRecords, request.identifier)
 
-	} else {
+	default:
+		tl.errors += 1
 		log.Panicf("Request type %v is malformed: it needs to be either START or END", request.requestType)
 	}
 }

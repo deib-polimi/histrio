@@ -120,6 +120,12 @@ func (mng *ActorManagerImpl) PrepareMessageProcessing() (RecipientsIds, error) {
 		return &utils.MapSet[PhysicalPartitionId]{}, err
 	}
 
+	for _, benchmarkHelper := range mng.benchmarkHelpers {
+		if !benchmarkHelper.IsEmpty() {
+			executeStartMeasurement(benchmarkHelper)
+		}
+	}
+
 	serializedActorState, err := json.Marshal(mng.actor)
 
 	if err != nil {
@@ -172,12 +178,6 @@ func (mng *ActorManagerImpl) PrepareMessageProcessing() (RecipientsIds, error) {
 }
 
 func (mng *ActorManagerImpl) CommitMessageProcessing() error {
-
-	for _, benchmarkHelper := range mng.benchmarkHelpers {
-		if !benchmarkHelper.IsEmpty() {
-			executeMeasurement(benchmarkHelper, true)
-		}
-	}
 	err := mng.actorManagerDao.ExecuteTransaction(
 		mng.actorId,
 		mng.pendingTransaction.speculatedState,
@@ -194,7 +194,7 @@ func (mng *ActorManagerImpl) CommitMessageProcessing() error {
 	} else {
 		for _, benchmarkHelper := range mng.benchmarkHelpers {
 			if !benchmarkHelper.IsEmpty() {
-				executeMeasurement(benchmarkHelper, false)
+				executeEndMeasurement(benchmarkHelper)
 			}
 		}
 		mng.lastCommittedState = mng.pendingTransaction.speculatedState
@@ -236,9 +236,16 @@ func (mng *ActorManagerImpl) AddBenchmarkHelper(helper *BenchmarkHelper) {
 	mng.benchmarkHelpers = append(mng.benchmarkHelpers, helper)
 }
 
-func executeMeasurement(benchmarkHelper *BenchmarkHelper, isBeforeTransaction bool) {
+func executeStartMeasurement(benchmarkHelper *BenchmarkHelper) {
 	startTime := time.Now()
-	benchmarkHelper.ExecuteMeasurements(isBeforeTransaction)
+	benchmarkHelper.ExecuteMeasurements(true)
 	delta := time.Since(startTime)
-	log.Printf("Measurement took %v ms", delta.Milliseconds())
+	log.Printf("Start Measurement took %v ms", delta.Milliseconds())
+}
+
+func executeEndMeasurement(benchmarkHelper *BenchmarkHelper) {
+	startTime := time.Now()
+	benchmarkHelper.ExecuteMeasurements(false)
+	delta := time.Since(startTime)
+	log.Printf("End Measurement took %v ms", delta.Milliseconds())
 }
