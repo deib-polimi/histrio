@@ -5,62 +5,66 @@ import "log"
 type BenchmarkHelper struct {
 	timestampCollector TimestampCollector
 	runId              string
-	measurements       map[bool][]Measurement //true -> before transaction. false -> after transaction
+	startMeasure       []Measurement
+	endMeasure         []Measurement
 }
 
 func (bh *BenchmarkHelper) Init(context ExecutionContext) {
 	context.actorManager.AddBenchmarkHelper(bh)
 	bh.timestampCollector = context.timestampCollectorFactory.BuildTimestampCollector()
 	bh.runId = context.runId
-	bh.measurements = make(map[bool][]Measurement)
+	bh.startMeasure = make([]Measurement, 0)
+	bh.endMeasure = make([]Measurement, 0)
 }
 
-func (bh *BenchmarkHelper) StartMeasurement(identifier string, message string, measureBeforeTransaction bool) {
-	bh.measurements[measureBeforeTransaction] = append(bh.measurements[measureBeforeTransaction],
+func (bh *BenchmarkHelper) StartMeasurement(identifier string, message string) {
+	bh.startMeasure = append(bh.startMeasure,
 		Measurement{
-			identifier:               identifier,
-			message:                  message,
-			measureBeforeTransaction: measureBeforeTransaction,
-			isEndMeasurement:         false,
+			identifier:       identifier,
+			message:          message,
+			isEndMeasurement: false,
 		})
 }
 
-func (bh *BenchmarkHelper) EndMeasurement(identifier string, message string, measureBeforeTransaction bool) {
-	bh.measurements[measureBeforeTransaction] = append(bh.measurements[measureBeforeTransaction],
+func (bh *BenchmarkHelper) EndMeasurement(identifier string, message string) {
+	bh.endMeasure = append(bh.endMeasure,
 		Measurement{
-			identifier:               identifier,
-			message:                  message,
-			measureBeforeTransaction: measureBeforeTransaction,
-			isEndMeasurement:         true,
+			identifier:       identifier,
+			message:          message,
+			isEndMeasurement: true,
 		})
 }
 
-func (bh *BenchmarkHelper) ExecuteMeasurements(isBeforeTransaction bool) {
-
-	for _, measurement := range bh.measurements[isBeforeTransaction] {
+func (bh *BenchmarkHelper) ExecuteStartMeasurements() {
+	for _, measurement := range bh.startMeasure {
 		measurementIdentifier := bh.runId + "/" + measurement.identifier
-		if measurement.isEndMeasurement {
-			err := bh.timestampCollector.EndMeasurement(measurementIdentifier)
-			if err != nil {
-				log.Printf("Encountered error while making end mesaurement (id = %v): %v\n", measurementIdentifier, err)
-			}
-		} else {
-			err := bh.timestampCollector.StartMeasurement(measurementIdentifier)
-			if err != nil {
-				log.Printf("Encountered error while making start mesaurement (id = %v): %v\n", measurementIdentifier, err)
-			}
+
+		err := bh.timestampCollector.StartMeasurement(measurementIdentifier)
+		if err != nil {
+			log.Printf("Encountered error while making start mesaurement (id = %v): %v\n", measurementIdentifier, err)
 		}
 	}
-	delete(bh.measurements, isBeforeTransaction)
+	bh.startMeasure = make([]Measurement, 0)
+}
+
+func (bh *BenchmarkHelper) ExecuteEndMeasurements() {
+	for _, measurement := range bh.endMeasure {
+		measurementIdentifier := bh.runId + "/" + measurement.identifier
+
+		err := bh.timestampCollector.EndMeasurement(measurementIdentifier)
+		if err != nil {
+			log.Printf("Encountered error while making end mesaurement (id = %v): %v\n", measurementIdentifier, err)
+		}
+	}
+	bh.endMeasure = make([]Measurement, 0)
 }
 
 func (bh *BenchmarkHelper) IsEmpty() bool {
-	return len(bh.measurements) == 0
+	return len(bh.startMeasure) == 0 && len(bh.endMeasure) == 0
 }
 
 type Measurement struct {
-	identifier               string
-	message                  string
-	measureBeforeTransaction bool
-	isEndMeasurement         bool
+	identifier       string
+	message          string
+	isEndMeasurement bool
 }

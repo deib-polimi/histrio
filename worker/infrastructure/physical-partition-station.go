@@ -120,7 +120,7 @@ func (ps *PhysicalPartitionStation) Start() {
 			}
 
 		case <-ps.periodicSignal:
-			if isRecovered == false && isRecovering == false {
+			if !isRecovered && !isRecovering {
 				ps.pullRequestSignal <- ShardPullRequest{isRecoveryRequest: true}
 				isRecovering = true
 			}
@@ -155,12 +155,12 @@ func (ps *PhysicalPartitionStation) Start() {
 				}
 			}
 
-		case tPolling := <-ps.notifySignal:
+		case tNotify := <-ps.notifySignal:
 			// log.Printf("Activated from AMQP after %dms", time.Since(lastAct).Milliseconds())
 			// lastAct = time.Now()
 			for _, locus := range ps.phyPartitionsLoci {
 				select {
-				case locus.slot.pollInboxSignal <- tPolling:
+				case locus.slot.pollInboxSignal <- tNotify:
 				default:
 				}
 			}
@@ -313,28 +313,37 @@ func (ps *physicalPartitionSlot) Start() {
 
 			select {
 			case <-ps.pollInboxSignal: //polling inboxes and check for phyPartition termination
-				canPoll := true
-				if ps.useBackoffStrategy {
-					canPoll = !ps.needsToStop && ps.backoffCyclesToWait == 0
-				} else {
-					canPoll = !ps.needsToStop
-				}
-				if canPoll {
-					newMessagesPolled, err := ps.phyPartitionManager.FetchInboxes()
+				// canPoll := true
+				// if ps.useBackoffStrategy {
+				// 	canPoll = !ps.needsToStop && ps.backoffCyclesToWait == 0
+				// } else {
+				// canPoll = !ps.needsToStop
+				// }
+				for range 2 {
+					if !ps.needsToStop {
+						newMessageCount, err := ps.phyPartitionManager.FetchInboxes()
 
-					if err != nil {
-						break
-					}
+						if err != nil {
+							log.Printf("[ERROR] poll error: %s", err)
+							break
+						}
 
-					if newMessagesPolled == 0 {
-						ps.lastBackoffDelay *= 2
-						ps.backoffCyclesToWait = ps.lastBackoffDelay
-					} else {
-						ps.lastMessageProcessedTime = time.Now()
+						// if newMessageCount == 0 {
+						// 	ps.lastBackoffDelay *= 2
+						// 	ps.backoffCyclesToWait = ps.lastBackoffDelay
+						// } else {
+						if newMessageCount != 0 {
+							ps.lastMessageProcessedTime = time.Now()
+							break
+						} else {
+							time.Sleep(time.Duration(50) * time.Millisecond)
+						}
 					}
-				} else {
-					ps.backoffCyclesToWait--
 				}
+
+				// else {
+				// 	ps.backoffCyclesToWait--
+				// }
 
 				for _, actorManager := range ps.phyPartitionManager.PopReadyActorManagers() {
 					ps.processingQueue <- actorManager
@@ -346,7 +355,7 @@ func (ps *physicalPartitionSlot) Start() {
 					ps.lastActiveActorsCountUpdateValue = actorsCount
 				}
 
-				if actorsCount == 0 && time.Now().Sub(ps.lastMessageProcessedTime).Milliseconds() > ps.idleMillisecondsToWaitBeforeParking {
+				if actorsCount == 0 && time.Since(ps.lastMessageProcessedTime).Milliseconds() > ps.idleMillisecondsToWaitBeforeParking {
 					stop = true
 				}
 
@@ -358,9 +367,13 @@ func (ps *physicalPartitionSlot) Start() {
 					ps.processingQueue <- actorManager
 				}
 
-				if ps.needsToStop && ps.phyPartitionManager.GetActiveActorsCount() == 0 {
-					stop = true
-					break
+				if ps.phyPartitionManager.GetActiveActorsCount() == 0 {
+					if ps.needsToStop {
+						stop = true
+						break
+					} else {
+						ps.pollInboxSignal <- time.Now()
+					}
 				}
 
 			case <-ps.terminationSignal:

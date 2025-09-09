@@ -3,9 +3,6 @@ package dynamoutils
 import (
 	"context"
 	"encoding/json"
-	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
-	"github.com/aws/aws-sdk-go-v2/aws/retry"
-	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"log"
 	"main/baseline/hotel-reservation/model"
 	"main/utils"
@@ -16,6 +13,10 @@ import (
 	"reflect"
 	"strconv"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -375,7 +376,7 @@ func doPaginatedBatchWrite(client *dynamodb.Client, tableName string, items []ma
 						tableName: writeRequests[startIndex:excludedEndIndex],
 					},
 				})
-				time.Sleep(10 * time.Millisecond)
+				// time.Sleep(10 * time.Millisecond)
 				return utils.Result{}, err
 			})
 
@@ -431,7 +432,7 @@ func mapPaginatedItems(client *dynamodb.Client, tableName string, itemMapper fun
 					TableName: aws.String(tableName),
 					Item:      mappedItem,
 				})
-				time.Sleep(10 * time.Millisecond)
+				// time.Sleep(10 * time.Millisecond)
 				return utils.Result{}, putErr
 			})
 		}

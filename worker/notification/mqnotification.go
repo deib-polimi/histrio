@@ -180,8 +180,11 @@ func (l *MQReceiver) Start(outputChannel chan<- time.Time) error {
 
 	for d := range msgs {
 		if d.ContentType == "notification" {
-			log.Printf("AMQP notification")
-			outputChannel <- time.Now()
+			// log.Printf("AMQP notification")
+			select { // Non-blocking send
+			case outputChannel <- time.Now():
+			default:
+			}
 		} else {
 			log.Printf("Invalid content type for notification")
 		}

@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"log"
+	"math/rand/v2"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Actor interface {
@@ -357,8 +359,8 @@ func (u *User) ReceiveMessage(message Message) error {
 }
 
 func (u *User) onBookingRequest(bookingRequest BookingRequest) error {
-	requestId := u.GetId().String() + "#" + bookingRequest.HotelId.String() + strconv.Itoa(u.Counter)
-	u.BenchmarkHelper.StartMeasurement(requestId, "", true)
+	requestId := u.GetId().String() + "#" + bookingRequest.HotelId.String() + strconv.Itoa(u.Counter) + ":" + strconv.FormatInt(rand.Int64(), 16)
+	u.BenchmarkHelper.StartMeasurement(requestId, "")
 	u.Counter++
 	bookingRequest.RequestId = requestId
 	u.MessageSender.Tell(bookingRequest, bookingRequest.HotelId)
@@ -366,14 +368,14 @@ func (u *User) onBookingRequest(bookingRequest BookingRequest) error {
 }
 
 func (u *User) onBookingResponse(bookingResponse BookingResponse) error {
-	if bookingResponse.Success == true {
+	if bookingResponse.Success {
 		u.TotalReservationsCount++
 	} else {
 		u.FailedReservationsCount++
 	}
 
 	u.MessageSender.TellExternal(bookingResponse, bookingResponse.RequestId)
-	u.BenchmarkHelper.EndMeasurement(bookingResponse.RequestId, "", false)
+	u.BenchmarkHelper.EndMeasurement(bookingResponse.RequestId, "")
 
 	return nil
 }
@@ -433,7 +435,7 @@ func (bb *BankBranch) ReceiveMessage(message Message) error {
 }
 
 func (bb *BankBranch) onTransactionRequest(transactionRequest TransactionRequest) error {
-	bb.BenchmarkHelper.StartMeasurement(transactionRequest.TransactionId, "", true)
+	bb.BenchmarkHelper.StartMeasurement(transactionRequest.TransactionId, "")
 	srcAccount, err := bb.Accounts.Get(transactionRequest.SourceIban)
 	if err != nil {
 		return err
@@ -449,7 +451,7 @@ func (bb *BankBranch) onTransactionRequest(transactionRequest TransactionRequest
 			TransactionId: transactionRequest.TransactionId,
 			Success:       false,
 		}, transactionRequest.TransactionId)
-		bb.BenchmarkHelper.EndMeasurement(transactionRequest.TransactionId, "", false)
+		bb.BenchmarkHelper.EndMeasurement(transactionRequest.TransactionId, "")
 
 		return nil
 	}
@@ -461,7 +463,7 @@ func (bb *BankBranch) onTransactionRequest(transactionRequest TransactionRequest
 		TransactionId: transactionRequest.TransactionId,
 		Success:       true,
 	}, transactionRequest.TransactionId)
-	bb.BenchmarkHelper.EndMeasurement(transactionRequest.TransactionId, "", false)
+	bb.BenchmarkHelper.EndMeasurement(transactionRequest.TransactionId, "")
 	return nil
 }
 

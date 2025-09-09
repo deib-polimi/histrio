@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"main/utils"
-	"time"
 )
 
 type PendingTransaction struct {
@@ -145,16 +144,12 @@ func (mng *ActorManagerImpl) PrepareMessageProcessing() (RecipientsIds, error) {
 	//collect all new actors spawned
 	var spawningActors []Actor
 	for _, spawningActorsCollector := range mng.spawningActorsCollector {
-		for _, spawningActor := range spawningActorsCollector.GetSpawningActors() {
-			spawningActors = append(spawningActors, spawningActor)
-		}
+		spawningActors = append(spawningActors, spawningActorsCollector.GetSpawningActors()...)
 	}
 	//collect all messages sent by the actor
 	var outboxes []Outbox
 	for _, messageCollector := range mng.messageCollectors {
-		for _, outbox := range messageCollector.GetAllOutboxes() {
-			outboxes = append(outboxes, outbox)
-		}
+		outboxes = append(outboxes, messageCollector.GetAllOutboxes()...)
 	}
 
 	mng.pendingTransaction = PendingTransaction{
@@ -189,6 +184,7 @@ func (mng *ActorManagerImpl) CommitMessageProcessing() error {
 	)
 
 	if err != nil {
+		log.Printf("Rolling back messages due to transaction error: %s", err)
 		mng.ForceMessageProcessingRollback()
 		return err
 	} else {
@@ -237,15 +233,15 @@ func (mng *ActorManagerImpl) AddBenchmarkHelper(helper *BenchmarkHelper) {
 }
 
 func executeStartMeasurement(benchmarkHelper *BenchmarkHelper) {
-	startTime := time.Now()
-	benchmarkHelper.ExecuteMeasurements(true)
-	delta := time.Since(startTime)
-	log.Printf("Start Measurement took %v ms", delta.Milliseconds())
+	// startTime := time.Now()
+	benchmarkHelper.ExecuteStartMeasurements()
+	// delta := time.Since(startTime)
+	// log.Printf("Start Measurement took %v ms", delta.Milliseconds())
 }
 
 func executeEndMeasurement(benchmarkHelper *BenchmarkHelper) {
-	startTime := time.Now()
-	benchmarkHelper.ExecuteMeasurements(false)
-	delta := time.Since(startTime)
-	log.Printf("End Measurement took %v ms", delta.Milliseconds())
+	// startTime := time.Now()
+	benchmarkHelper.ExecuteEndMeasurements()
+	// delta := time.Since(startTime)
+	// log.Printf("End Measurement took %v ms", delta.Milliseconds())
 }

@@ -194,7 +194,7 @@ func BuildNewWorker(params *WorkerParameters, client *dynamodb.Client, timestamp
 	periodicTimer := time.NewTicker(time.Duration(params.PeriodicTimerMillis) * time.Millisecond)
 	pollInboxTimer := time.NewTicker(time.Duration(params.PollingTimerMillis) * time.Millisecond)
 	passivatingTimer := time.NewTicker(time.Duration(params.PassivatingTimerMillis) * time.Millisecond)
-	notifySignal := make(chan time.Time)
+	notifySignal := make(chan time.Time, 2)
 
 	notifier, err := notification.NewMQReceiver(params.amqpUrl, params.WorkerId)
 

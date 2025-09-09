@@ -1,7 +1,6 @@
 package sut
 
 import (
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"log"
 	"main/dynamoutils"
 	"main/utils"
@@ -9,6 +8,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 func HotelReservationLoadState(parameters *HotelReservationParameters, client *dynamodb.Client) error {
@@ -94,10 +95,7 @@ func SlowlyLoadInboxes(
 	time.Sleep(initialDelay)
 	i := 0
 	for {
-		endExcludedIndex := i + maxRequestsPerPeriod
-		if endExcludedIndex > len(newMessages) {
-			endExcludedIndex = len(newMessages)
-		}
+		endExcludedIndex := min(i+maxRequestsPerPeriod, len(newMessages))
 
 		messageBatch := newMessages[i:endExcludedIndex]
 		wg.Add(len(messageBatch))

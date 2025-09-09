@@ -44,16 +44,12 @@ func NewTimestampCollectorImpl(client *http.Client, baseUrl string) *TimestampCo
 
 func (tc *TimestampCollectorImpl) StartMeasurement(identifier string) error {
 	myUrl := tc.baseUrl + "/start/" + url.QueryEscape(identifier)
-	r, err := http.NewRequest("POST", myUrl, bytes.NewBuffer([]byte(`{}`)))
-	if err != nil {
-		return err
-	}
-	res, err := tc.client.Do(r)
+	res, err := http.Post(myUrl, "application/octet-stream", bytes.NewBuffer([]byte(`{}`)))
 	if err != nil {
 		return err
 	}
 	defer func(Body io.ReadCloser) {
-		myErr := Body.Close()
+		myErr := res.Body.Close()
 		if myErr != nil {
 			panic(myErr)
 		}
@@ -64,11 +60,7 @@ func (tc *TimestampCollectorImpl) StartMeasurement(identifier string) error {
 
 func (tc *TimestampCollectorImpl) EndMeasurement(identifier string) error {
 	myUrl := tc.baseUrl + "/end/" + url.QueryEscape(identifier)
-	r, err := http.NewRequest("POST", myUrl, bytes.NewBuffer([]byte(`{}`)))
-	if err != nil {
-		return err
-	}
-	res, err := tc.client.Do(r)
+	res, err := http.Post(myUrl, "application/octet-stream", bytes.NewBuffer([]byte(`{}`)))
 	if err != nil {
 		return err
 	}
@@ -79,7 +71,11 @@ func (tc *TimestampCollectorImpl) EndMeasurement(identifier string) error {
 		}
 	}(res.Body)
 	bodyBytes, err := io.ReadAll(res.Body)
-	log.Printf("Request with id %v ended in %v ns\n", identifier, string(bodyBytes))
+	if err == nil {
+		log.Printf("Request with id %v ended in %v ns\n", identifier, string(bodyBytes))
+	} else {
+		log.Printf("Request with id %v ended in error '%s'\n", identifier, err)
+	}
 
 	return nil
 }
