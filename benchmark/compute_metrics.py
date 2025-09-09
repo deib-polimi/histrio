@@ -183,40 +183,45 @@ def compute_average_latency(df):
 
 def get_dfs_by_name():
     dfs_by_name = {
-        "BANKING_THROUGHPUT-1 Worker": aggregate_logs("SUT_TEST_SMALL_1WORKERS_5_CCA_BACKOFF", 5),
-        "BANKING_THROUGHPUT-2 Workers": aggregate_logs("SUT_TEST_SMALL_2WORKERS_5_CCA_BACKOFF", 5),
-        "BANKING_THROUGHPUT-4 Workers": aggregate_logs("SUT_TEST_SMALL_4WORKERS_5_CCA_BACKOFF", 5),
-        "BANKING_THROUGHPUT-8 Workers": aggregate_logs("SUT_TEST_SMALL_8WORKERS_5_CCA_BACKOFF_AGAIN", 5),
-        "BANKING_THROUGHPUT-Baseline": aggregate_logs("BASELINE_BANKING_30kACC_60kTX", 5),
-        "BANKING_LATENCY-Baseline": aggregate_logs("BASELINE_BANKING_LATENCY_30k_ACC_WITH_RATE_LIMITER", 5),
-        "HOTEL_THROUGHPUT-1 Worker": aggregate_logs("SUT_HOTEL_100H_200_U_10kTX_1_WORKER", 5),
-        "HOTEL_THROUGHPUT-2 Workers": aggregate_logs("SUT_HOTEL_100H_200_U_10kTX_2_WORKER", 5),
-        "HOTEL_THROUGHPUT-4 Workers": aggregate_logs("SUT_HOTEL_100H_200_U_10kTX_4_WORKER", 5),
-        "HOTEL_THROUGHPUT-8 Workers": aggregate_logs("SUT_HOTEL_100H_200_U_10kTX_8_WORKER", 5),
-        # the latency benchmarks for the sut have been run with 4 workers
-        "HOTEL_LATENCY-100ms polling": aggregate_logs("SUT_HOTEL_100H_200_U_10TX_EVERY_2_SECONDS_100MS_POLL", 5),
-        "HOTEL_LATENCY-500ms polling": aggregate_logs("SUT_HOTEL_100H_200_U_10TX_EVERY_2_SECONDS_500MS_POLL", 5),
-        "HOTEL_LATENCY-1000ms polling": aggregate_logs("SUT_HOTEL_100H_200_U_10TX_EVERY_2_SECONDS_1000MS_POLL", 5),
-        "BANKING_LATENCY-100ms polling": aggregate_logs("SUT_BANKING_SLOW_4_WORKERS_100MS_POLL", 5),
-        "BANKING_LATENCY-500ms polling": aggregate_logs("SUT_BANKING_SLOW_4_WORKERS_500MS_POLL", 5),
-        "BANKING_LATENCY-1000ms polling": aggregate_logs("SUT_BANKING_SLOW_4_WORKERS_1000MS_POLL", 5),
-        "HOTEL_THROUGHPUT-Baseline": aggregate_logs("BASELINE_HOTEL_THROUHPUT_10k_REQS", 5),
-        "HOTEL_LATENCY-Baseline": aggregate_logs("BASELINE_HOTEL_LATENCY_10k_100H_200U_WITH_RATE_LIMITER", 5),
-        "HOTEL_THROUGHPUT_WITH_CONTENTION-Baseline": aggregate_logs("BASELINE_HOTEL_THROUHPUT_10k_100H_200U", 5),
-        # "Baseline hotel latency with contention": aggregate_logs("BASELINE_HOTEL_LATENCY_10k_100H_200U", 5),
+        "TEST_HISTRIO2_LATENCY-4 Workers 7000ms": aggregate_logs("TEST_HISTRIO2_LATENCY", 4),
+        "TEST_HISTRIO2_LATENCY-4 Workers 1000ms": aggregate_logs("TEST_HISTRIO2_LATENCY_1000ms", 4),
+        "TEST_HISTRIO2_LATENCY-4 Workers(B) 1000ms": aggregate_logs("TEST_HISTRIO2_LATENCY_B_1000ms", 4),
+        "TEST_HISTRIO2_LATENCY-4 Workers(B) 100ms": aggregate_logs("TEST_HISTRIO2_LATENCY_B_100ms", 4),
+        # "BANKING_THROUGHPUT-1 Worker": aggregate_logs("SUT_TEST_SMALL_1WORKERS_5_CCA_BACKOFF", 5),
+        # "BANKING_THROUGHPUT-2 Workers": aggregate_logs("SUT_TEST_SMALL_2WORKERS_5_CCA_BACKOFF", 5),
+        # "BANKING_THROUGHPUT-4 Workers": aggregate_logs("SUT_TEST_SMALL_4WORKERS_5_CCA_BACKOFF", 5),
+        # "BANKING_THROUGHPUT-8 Workers": aggregate_logs("SUT_TEST_SMALL_8WORKERS_5_CCA_BACKOFF_AGAIN", 5),
+        # "BANKING_THROUGHPUT-Baseline": aggregate_logs("BASELINE_BANKING_30kACC_60kTX", 5),
+        # "BANKING_LATENCY-Baseline": aggregate_logs("BASELINE_BANKING_LATENCY_30k_ACC_WITH_RATE_LIMITER", 5),
+        # "HOTEL_THROUGHPUT-1 Worker": aggregate_logs("SUT_HOTEL_100H_200_U_10kTX_1_WORKER", 5),
+        # "HOTEL_THROUGHPUT-2 Workers": aggregate_logs("SUT_HOTEL_100H_200_U_10kTX_2_WORKER", 5),
+        # "HOTEL_THROUGHPUT-4 Workers": aggregate_logs("SUT_HOTEL_100H_200_U_10kTX_4_WORKER", 5),
+        # "HOTEL_THROUGHPUT-8 Workers": aggregate_logs("SUT_HOTEL_100H_200_U_10kTX_8_WORKER", 5),
+        # # the latency benchmarks for the sut have been run with 4 workers
+        # "HOTEL_LATENCY-100ms polling": aggregate_logs("SUT_HOTEL_100H_200_U_10TX_EVERY_2_SECONDS_100MS_POLL", 5),
+        # "HOTEL_LATENCY-500ms polling": aggregate_logs("SUT_HOTEL_100H_200_U_10TX_EVERY_2_SECONDS_500MS_POLL", 5),
+        # "HOTEL_LATENCY-1000ms polling": aggregate_logs("SUT_HOTEL_100H_200_U_10TX_EVERY_2_SECONDS_1000MS_POLL", 5),
+        # "BANKING_LATENCY-100ms polling": aggregate_logs("SUT_BANKING_SLOW_4_WORKERS_100MS_POLL", 5),
+        # "BANKING_LATENCY-500ms polling": aggregate_logs("SUT_BANKING_SLOW_4_WORKERS_500MS_POLL", 5),
+        # "BANKING_LATENCY-1000ms polling": aggregate_logs("SUT_BANKING_SLOW_4_WORKERS_1000MS_POLL", 5),
+        # "HOTEL_THROUGHPUT-Baseline": aggregate_logs("BASELINE_HOTEL_THROUHPUT_10k_REQS", 5),
+        # "HOTEL_LATENCY-Baseline": aggregate_logs("BASELINE_HOTEL_LATENCY_10k_100H_200U_WITH_RATE_LIMITER", 5),
+        # "HOTEL_THROUGHPUT_WITH_CONTENTION-Baseline": aggregate_logs("BASELINE_HOTEL_THROUHPUT_10k_100H_200U", 5),
+        # # "Baseline hotel latency with contention": aggregate_logs("BASELINE_HOTEL_LATENCY_10k_100H_200U", 5),
     }
     return dfs_by_name
 
 
 def save_thesis_plots():
-    save_plots_comparison(["BANKING_THROUGHPUT-Baseline", "BANKING_THROUGHPUT-1 Worker", "BANKING_THROUGHPUT-2 Workers", "BANKING_THROUGHPUT-4 Workers", "BANKING_THROUGHPUT-8 Workers"], "throughput", "Banking throughput", "Banking_throughput")
-    save_plots_comparison(["BANKING_LATENCY-Baseline", "BANKING_LATENCY-100ms polling", "BANKING_LATENCY-500ms polling",
-                           "BANKING_LATENCY-1000ms polling"], "latency", "Banking latency", "Banking_latency")
-    save_plots_comparison(["BANKING_LATENCY-Baseline", "BANKING_LATENCY-100ms polling", "BANKING_LATENCY-500ms polling",
-                        "BANKING_LATENCY-1000ms polling"], "latency-log", "Banking latency(log)", "Banking_latency_log")
-    save_plots_comparison(["HOTEL_THROUGHPUT_WITH_CONTENTION-Baseline", "HOTEL_THROUGHPUT-1 Worker", "HOTEL_THROUGHPUT-2 Workers", "HOTEL_THROUGHPUT-4 Workers", "HOTEL_THROUGHPUT-8 Workers"], "throughput", "Hotel throughput", "Hotel_throughput")
-    save_plots_comparison(["HOTEL_LATENCY-Baseline", "HOTEL_LATENCY-100ms polling", "HOTEL_LATENCY-500ms polling", "HOTEL_LATENCY-1000ms polling"], "latency", "Hotel latency", "Hotel_latency")
-    save_plots_comparison(["HOTEL_LATENCY-Baseline", "HOTEL_LATENCY-100ms polling", "HOTEL_LATENCY-500ms polling", "HOTEL_LATENCY-1000ms polling"], "latency-log", "Hotel latency (log)", "Hotel_latency_log")
+    save_plots_comparison(["TEST_HISTRIO2_LATENCY-4 Workers 7000ms", "TEST_HISTRIO2_LATENCY-4 Workers 1000ms", "TEST_HISTRIO2_LATENCY-4 Workers(B) 100ms", "TEST_HISTRIO2_LATENCY-4 Workers(B) 1000ms"], "latency",  "Hotel lat2", "Hotel lat2x")
+    # save_plots_comparison(["BANKING_THROUGHPUT-Baseline", "BANKING_THROUGHPUT-1 Worker", "BANKING_THROUGHPUT-2 Workers", "BANKING_THROUGHPUT-4 Workers", "BANKING_THROUGHPUT-8 Workers"], "throughput", "Banking throughput", "Banking_throughput")
+    # save_plots_comparison(["BANKING_LATENCY-Baseline", "BANKING_LATENCY-100ms polling", "BANKING_LATENCY-500ms polling",
+    #                        "BANKING_LATENCY-1000ms polling"], "latency", "Banking latency", "Banking_latency")
+    # save_plots_comparison(["BANKING_LATENCY-Baseline", "BANKING_LATENCY-100ms polling", "BANKING_LATENCY-500ms polling",
+    #                     "BANKING_LATENCY-1000ms polling"], "latency-log", "Banking latency(log)", "Banking_latency_log")
+    # save_plots_comparison(["HOTEL_THROUGHPUT_WITH_CONTENTION-Baseline", "HOTEL_THROUGHPUT-1 Worker", "HOTEL_THROUGHPUT-2 Workers", "HOTEL_THROUGHPUT-4 Workers", "HOTEL_THROUGHPUT-8 Workers"], "throughput", "Hotel throughput", "Hotel_throughput")
+    # save_plots_comparison(["HOTEL_LATENCY-Baseline", "HOTEL_LATENCY-100ms polling", "HOTEL_LATENCY-500ms polling", "HOTEL_LATENCY-1000ms polling"], "latency", "Hotel latency", "Hotel_latency")
+    # save_plots_comparison(["HOTEL_LATENCY-Baseline", "HOTEL_LATENCY-100ms polling", "HOTEL_LATENCY-500ms polling", "HOTEL_LATENCY-1000ms polling"], "latency-log", "Hotel latency (log)", "Hotel_latency_log")
 
 
 save_thesis_plots()

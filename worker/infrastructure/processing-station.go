@@ -19,7 +19,7 @@ type ProcessingStation struct {
 
 	taskDao                    domain.TaskDao
 	notificationStorageFactory domain.NotificationStorageFactory
-	amqpUrl                    string
+	amqp                       bool
 	retryFactory               func() *utils.Retrier[struct{}]
 }
 
@@ -28,7 +28,7 @@ func NewProcessingStation(
 	processingSlotsCount int, maxMessageProcessingRetries int,
 	taskDao domain.TaskDao,
 	notificationStorageFactory domain.NotificationStorageFactory,
-	amqpUrl string,
+	amqp bool,
 	retryFactory func() *utils.Retrier[struct{}]) *ProcessingStation {
 	return &ProcessingStation{
 		processingQueue:             processingQueue,
@@ -37,21 +37,22 @@ func NewProcessingStation(
 		maxMessageProcessingRetries: maxMessageProcessingRetries,
 		taskDao:                     taskDao,
 		notificationStorageFactory:  notificationStorageFactory,
-		amqpUrl:                     amqpUrl,
+		amqp:                        amqp,
 		retryFactory:                retryFactory,
 	}
 }
 
 func (ps *ProcessingStation) Start() {
+	activateWorkers := make(chan string, 64)
 
-	notifier, err := notification.NewMQNotifier(ps.amqpUrl)
-	if err != nil {
-		log.Fatalf("Couldn't start AMQP Notifier")
+	if ps.amqp {
+		notifier, err := notification.NewMQNotifier()
+		if err != nil {
+			log.Fatalf("Couldn't start AMQP Notifier")
+		}
+
+		go amqpNotifier(notifier, activateWorkers)
 	}
-
-	activateWorkers := make(chan string)
-
-	go amqpNotifier(notifier, activateWorkers)
 
 	for i := range ps.processingSlotsCount {
 		go processSlot(
@@ -84,35 +85,34 @@ func processSlot(
 			if err != nil {
 				log.Printf("Actor failed to process message: %v\n", err)
 				consecutiveRetries++
-
-				if consecutiveRetries > maxMessageProcessingRetries {
-					log.Fatalf("too many retries for actor %v", actorManager.GetActorId())
+			} else {
+				//notificationLoggingStartTime := time.Now()
+				recipientsIds.ForEach(func(recipientId domain.PhysicalPartitionId) bool {
+					err = notificationStorage.AddNotification(domain.Notification{PhyPartitionId: recipientId})
+					return err != nil
+				})
+				//log.Printf("Logging notification delay [%v]: %v\n", actorManager.GetActorId(), time.Since(notificationLoggingStartTime))
+				if err != nil { //failed to log a notification
+					log.Printf("Notification loggin failed: %v\n", err)
+					consecutiveRetries++
+					actorManager.ForceMessageProcessingRollback()
 				} else {
-					continue
+					transactionStartTime := time.Now()
+					_, transactionErr := retrier.DoWithReturn(func() (struct{}, error) {
+						return struct{}{}, actorManager.CommitMessageProcessing()
+					})
+					log.Printf("Transaction delay [%v]: %v\n", actorManager.GetActorId(), time.Since(transactionStartTime))
+					if transactionErr != nil { //failed to commit transaction
+						log.Printf("Transaction failed: %v\n", err)
+						consecutiveRetries++
+					} else {
+						consecutiveRetries = 0
+					}
 				}
 			}
-			//notificationLoggingStartTime := time.Now()
-			recipientsIds.ForEach(func(recipientId domain.PhysicalPartitionId) bool {
-				err = notificationStorage.AddNotification(domain.Notification{PhyPartitionId: recipientId})
-				return err != nil
-			})
-			//log.Printf("Logging notification delay [%v]: %v\n", actorManager.GetActorId(), time.Since(notificationLoggingStartTime))
-			if err != nil { //failed to log a notification
-				log.Printf("Notification logging failed: %v\n", err)
-				consecutiveRetries++
-				actorManager.ForceMessageProcessingRollback()
-			} else {
-				transactionStartTime := time.Now()
-				_, transactionErr := retrier.DoWithReturn(func() (struct{}, error) {
-					return struct{}{}, actorManager.CommitMessageProcessing()
-				})
-				log.Printf("Transaction delay [%v]: %v\n", actorManager.GetActorId(), time.Since(transactionStartTime))
-				if transactionErr != nil { //failed to commit transaction
-					log.Printf("Transaction failed: %v\n", err)
-					consecutiveRetries++
-				} else {
-					consecutiveRetries = 0
-				}
+
+			if consecutiveRetries > maxMessageProcessingRetries {
+				log.Fatalf("too many retries for actor %v", actorManager.GetActorId())
 			}
 
 		}
@@ -171,7 +171,6 @@ func activateNotifications(notificationStorage domain.NotificationStorage, taskD
 				}
 			}
 		}()
-
 	}
 
 	wg.Wait()
@@ -197,13 +196,14 @@ func activateNotifications(notificationStorage domain.NotificationStorage, taskD
 
 	uniqueWorkers := utils.NewMapSet[string]()
 	for w := range workers {
-		uniqueWorkers.Add(w)
+		if !uniqueWorkers.Contains(w) {
+			uniqueWorkers.Add(w)
+			select { // non-blocking send
+			case activateWorkers <- w:
+			default:
+			}
+		}
 	}
-
-	uniqueWorkers.ForEach(func(w string) bool {
-		activateWorkers <- w
-		return false
-	})
 }
 
 // if the function returns true the actor is active at the end of the call

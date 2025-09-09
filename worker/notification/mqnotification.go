@@ -37,7 +37,7 @@ func rabbitMqUrl() (string, error) {
 	return connectionString, nil
 }
 
-func NewMQNotifier(amqpUrl string) (*MQNotifier, error) {
+func NewMQNotifier() (*MQNotifier, error) {
 	url, err := rabbitMqUrl()
 	if err != nil {
 		return nil, err
@@ -109,7 +109,7 @@ type MQReceiver struct {
 	q    amqp.Queue
 }
 
-func NewMQReceiver(amqpUrl string, workerId string) (*MQReceiver, error) {
+func NewMQReceiver(workerId string) (*MQReceiver, error) {
 	url, err := rabbitMqUrl()
 	if err != nil {
 		return nil, err

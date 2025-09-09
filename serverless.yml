@@ -24,15 +24,15 @@ package:
   individually: true
 
 functions:
-  # ClockSynchronizerTest:
-  #   name: ClockSynchronizerTest
-  #   handler: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
-  #   package:
-  #     artifact: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
-  #   maximumRetryAttempts: 0
-  #   maximumEventAge: 60
-  #   timeout: 60
-  #   memorySize: 3008
+  ClockSynchronizerTest:
+    name: ClockSynchronizerTest
+    handler: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
+    package:
+      artifact: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
+    maximumRetryAttempts: 0
+    maximumEventAge: 60
+    timeout: 60
+    memorySize: 3008
 
   Worker:
     name: Worker

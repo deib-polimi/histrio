@@ -81,13 +81,14 @@ func SlowlyLoadInboxes(
 	requestQueue := make(chan utils.Pair[domain.ActorMessage, domain.ActorId], maxRequestsPerPeriod)
 	var wg sync.WaitGroup
 	for range maxRequestsPerPeriod {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for request := range requestQueue {
 				localErr := dynamoutils.AddMessage(client, request.First, request.Second)
 				if localErr != nil {
 					log.Printf("Could not add the message %v: %v\n", request.First.Id, localErr)
 				}
-				wg.Done()
 			}
 		}()
 	}
@@ -98,14 +99,11 @@ func SlowlyLoadInboxes(
 		endExcludedIndex := min(i+maxRequestsPerPeriod, len(newMessages))
 
 		messageBatch := newMessages[i:endExcludedIndex]
-		wg.Add(len(messageBatch))
 
 		for _, message := range messageBatch {
 			requestQueue <- message
+			time.Sleep(sendingPeriod / time.Duration(maxRequestsPerPeriod))
 		}
-
-		time.Sleep(sendingPeriod)
-		wg.Wait()
 
 		i = endExcludedIndex
 
@@ -114,6 +112,7 @@ func SlowlyLoadInboxes(
 		}
 	}
 
+	wg.Wait()
 	close(requestQueue)
 
 	return nil

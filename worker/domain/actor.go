@@ -536,7 +536,7 @@ func (ta *TravelAgency) ReceiveMessage(message Message) error {
 	} else if travelBookingRequest, ok := message.(*TravelBookingRequest); ok {
 		return ta.processTravelBookingRequest(*travelBookingRequest)
 	} else {
-		return errors.New(fmt.Sprintf("Type '%v' not handled by TravelAgency actor %v", reflect.TypeOf(message), ta.GetId()))
+		return fmt.Errorf("type '%v' not handled by TravelAgency actor %v", reflect.TypeOf(message), ta.GetId())
 	}
 }
 

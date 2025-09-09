@@ -289,8 +289,8 @@ func newPhysicalPartitionSlot(
 	idleMillisecondsToWaitBeforeParking int64) *physicalPartitionSlot {
 	return &physicalPartitionSlot{
 		completedActorManagersQueue:         make(chan domain.ActorManager, 10000),
-		pollInboxSignal:                     make(chan time.Time),
-		terminationSignal:                   make(chan struct{}),
+		pollInboxSignal:                     make(chan time.Time, 2),
+		terminationSignal:                   make(chan struct{}, 1),
 		processingQueue:                     processingQueue,
 		activeActorsCountUpdateSignal:       activeActorsCountUpdateSignal,
 		idleQueue:                           idleQueue,
@@ -313,38 +313,28 @@ func (ps *physicalPartitionSlot) Start() {
 
 			select {
 			case <-ps.pollInboxSignal: //polling inboxes and check for phyPartition termination
-				// canPoll := true
-				// if ps.useBackoffStrategy {
-				// 	canPoll = !ps.needsToStop && ps.backoffCyclesToWait == 0
-				// } else {
-				// canPoll = !ps.needsToStop
-				// }
-				for range 2 {
-					if !ps.needsToStop {
-						newMessageCount, err := ps.phyPartitionManager.FetchInboxes()
-
-						if err != nil {
-							log.Printf("[ERROR] poll error: %s", err)
-							break
-						}
-
-						// if newMessageCount == 0 {
-						// 	ps.lastBackoffDelay *= 2
-						// 	ps.backoffCyclesToWait = ps.lastBackoffDelay
-						// } else {
-						if newMessageCount != 0 {
-							ps.lastMessageProcessedTime = time.Now()
-							break
-						} else {
-							time.Sleep(time.Duration(50) * time.Millisecond)
-						}
-					}
+				canPoll := true
+				if ps.useBackoffStrategy {
+					canPoll = !ps.needsToStop && ps.backoffCyclesToWait == 0
+				} else {
+					canPoll = !ps.needsToStop
 				}
+				if canPoll {
+					newMessagesPolled, err := ps.phyPartitionManager.FetchInboxes()
 
-				// else {
-				// 	ps.backoffCyclesToWait--
-				// }
+					if err != nil {
+						break
+					}
 
+					if newMessagesPolled == 0 {
+						ps.lastBackoffDelay *= 2
+						ps.backoffCyclesToWait = ps.lastBackoffDelay
+					} else {
+						ps.lastMessageProcessedTime = time.Now()
+					}
+				} else {
+					ps.backoffCyclesToWait--
+				}
 				for _, actorManager := range ps.phyPartitionManager.PopReadyActorManagers() {
 					ps.processingQueue <- actorManager
 				}
@@ -372,7 +362,10 @@ func (ps *physicalPartitionSlot) Start() {
 						stop = true
 						break
 					} else {
-						ps.pollInboxSignal <- time.Now()
+						select {
+						case ps.pollInboxSignal <- time.Now():
+						default:
+						}
 					}
 				}
 

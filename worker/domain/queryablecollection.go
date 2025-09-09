@@ -58,7 +58,7 @@ func (qc *QueryableCollection[T]) DropDirtyItems() {
 
 func (qc *QueryableCollection[T]) Get(itemId string) (T, error) {
 	cachedItem, ok := qc.fetchedItems[itemId]
-	if ok == false {
+	if !ok {
 		myType := reflect.TypeFor[T]().Elem()
 		anyItem, err := qc.context.queryableCollectionDao.GetItem(qc.CollectionId, myType, itemId, qc.context)
 		cachedItem = anyItem.(T)

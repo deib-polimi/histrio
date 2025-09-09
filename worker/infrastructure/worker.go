@@ -33,7 +33,7 @@ type Worker struct {
 	phyPartitionManagerFactory domain.PhysicalPartitionManagerFactory
 	notificationStorageFactory domain.NotificationStorageFactory
 
-	amqpUrl        string
+	amqp           bool
 	retrierFactory func() *utils.Retrier[struct{}]
 }
 
@@ -94,7 +94,7 @@ func (w *Worker) Run() {
 		w.maxMessageProcessingRetries,
 		w.taskDao,
 		w.notificationStorageFactory,
-		w.amqpUrl,
+		w.amqp,
 		w.retrierFactory,
 	)
 
@@ -110,7 +110,7 @@ type WorkerParameters struct {
 	WorkerId                                     string
 	RunId                                        string
 	BaseClockSynchronizerUrl                     string
-	amqpUrl                                      string
+	amqp                                         bool
 	MaxActorsCount                               int
 	MaximumConcurrentShardPullsCount             int
 	MaxConcurrentProcessingActors                int
@@ -196,15 +196,17 @@ func BuildNewWorker(params *WorkerParameters, client *dynamodb.Client, timestamp
 	passivatingTimer := time.NewTicker(time.Duration(params.PassivatingTimerMillis) * time.Millisecond)
 	notifySignal := make(chan time.Time, 2)
 
-	notifier, err := notification.NewMQReceiver(params.amqpUrl, params.WorkerId)
+	if params.amqp {
+		notifier, err := notification.NewMQReceiver(params.WorkerId)
 
-	if err != nil {
-		log.Fatalf("failed to create AMQP notifier %s", err)
+		if err != nil {
+			log.Fatalf("failed to create AMQP notifier %s", err)
+		}
+
+		go func() {
+			notifier.Start(notifySignal)
+		}()
 	}
-
-	go func() {
-		notifier.Start(notifySignal)
-	}()
 
 	notificationStorageFactory := notification.NewNotificationStorageFactoryImpl(params.WorkerId)
 

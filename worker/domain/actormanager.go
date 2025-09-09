@@ -119,12 +119,6 @@ func (mng *ActorManagerImpl) PrepareMessageProcessing() (RecipientsIds, error) {
 		return &utils.MapSet[PhysicalPartitionId]{}, err
 	}
 
-	for _, benchmarkHelper := range mng.benchmarkHelpers {
-		if !benchmarkHelper.IsEmpty() {
-			executeStartMeasurement(benchmarkHelper)
-		}
-	}
-
 	serializedActorState, err := json.Marshal(mng.actor)
 
 	if err != nil {
@@ -173,6 +167,9 @@ func (mng *ActorManagerImpl) PrepareMessageProcessing() (RecipientsIds, error) {
 }
 
 func (mng *ActorManagerImpl) CommitMessageProcessing() error {
+	for _, benchmarkHelper := range mng.benchmarkHelpers {
+		executeStartMeasurement(benchmarkHelper)
+	}
 	err := mng.actorManagerDao.ExecuteTransaction(
 		mng.actorId,
 		mng.pendingTransaction.speculatedState,
@@ -189,9 +186,7 @@ func (mng *ActorManagerImpl) CommitMessageProcessing() error {
 		return err
 	} else {
 		for _, benchmarkHelper := range mng.benchmarkHelpers {
-			if !benchmarkHelper.IsEmpty() {
-				executeEndMeasurement(benchmarkHelper)
-			}
+			executeEndMeasurement(benchmarkHelper)
 		}
 		mng.lastCommittedState = mng.pendingTransaction.speculatedState
 		for _, collector := range mng.itemCollectors {

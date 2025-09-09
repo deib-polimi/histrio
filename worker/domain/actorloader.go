@@ -1,11 +1,11 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
 )
-import "encoding/json"
 
 type EntityLoader struct {
 	registry        map[string]reflect.Type
@@ -26,7 +26,7 @@ func (r *EntityLoader) RegisterType(typeName string, newType reflect.Type) {
 
 func (r *EntityLoader) GetTypeByName(typeName string) (reflect.Type, error) {
 	myType, ok := r.registry[typeName]
-	if ok == false {
+	if !ok {
 		return reflect.TypeOf(0), errors.New("cannot find a registered type for type name '" + typeName + "'")
 	}
 
@@ -35,7 +35,7 @@ func (r *EntityLoader) GetTypeByName(typeName string) (reflect.Type, error) {
 
 func (r *EntityLoader) GetNameByType(myType reflect.Type) (string, error) {
 	myTypeName, ok := r.inverseRegistry[myType]
-	if ok == false {
+	if !ok {
 		return "", errors.New("cannot find a registered type name for type '" + myType.String() + "'")
 	}
 

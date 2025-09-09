@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/aws/aws-lambda-go/lambda"
 	"io"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/aws/aws-lambda-go/lambda"
 )
 
 func init() {
