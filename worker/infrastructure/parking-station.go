@@ -7,8 +7,9 @@ import (
 )
 
 type ParkingStation struct {
-	parkingQueue   <-chan domain.PhysicalPartitionManager
-	periodicSignal <-chan time.Time
+	parkingQueue          <-chan domain.PhysicalPartitionManager
+	parkingPeriodicSignal <-chan time.Time
+	parkNotifySignal      <-chan time.Time
 
 	newPhyPartitionQueue                chan<- domain.PhysicalPartitionManager
 	releasedPhyPartitionsCountingSignal chan<- int
@@ -18,10 +19,11 @@ type ParkingStation struct {
 	passivationIntervalMillis int64
 }
 
-func NewParkingStation(parkingQueue <-chan domain.PhysicalPartitionManager, periodicSignal <-chan time.Time, newPhyPartitionQueue chan<- domain.PhysicalPartitionManager, releasedPhyPartitionsCountingSignal chan<- int, passivationIntervalMillis int64) *ParkingStation {
+func NewParkingStation(parkingQueue <-chan domain.PhysicalPartitionManager, periodicSignal <-chan time.Time, parkNotifySignal <-chan time.Time, newPhyPartitionQueue chan<- domain.PhysicalPartitionManager, releasedPhyPartitionsCountingSignal chan<- int, passivationIntervalMillis int64) *ParkingStation {
 	return &ParkingStation{
 		parkingQueue:                        parkingQueue,
-		periodicSignal:                      periodicSignal,
+		parkingPeriodicSignal:               periodicSignal,
+		parkNotifySignal:                    parkNotifySignal,
 		newPhyPartitionQueue:                newPhyPartitionQueue,
 		releasedPhyPartitionsCountingSignal: releasedPhyPartitionsCountingSignal,
 		parkingSlots:                        make(map[domain.PhysicalPartitionId]*parkingSlot),
@@ -49,11 +51,18 @@ func (p *ParkingStation) Start() {
 					delete(p.parkingSlots, result.phyPartitionId)
 				}
 
-			case <-p.periodicSignal:
+			case <-p.parkingPeriodicSignal:
 				for _, slot := range p.parkingSlots {
 					if !slot.isPassivating { //&& time.Since(slot.lastActivityTime) >= time.Duration(p.passivationIntervalMillis)*time.Millisecond {
 						slot.isPassivating = true
-						go slot.tryPassivate(time.Duration(p.passivationIntervalMillis) * time.Millisecond)
+						slot.tryPassivate(time.Duration(p.passivationIntervalMillis) * time.Millisecond)
+					}
+				}
+
+			case <-p.parkNotifySignal:
+				for _, slot := range p.parkingSlots {
+					if !slot.isPassivating {
+						slot.checkInbox()
 					}
 				}
 			}
@@ -74,6 +83,19 @@ func newParkingSlot(passivationResultQueue chan<- passivationResult, phyPartitio
 		passivationResultQueue: passivationResultQueue,
 		phyPartitionManager:    phyPartitionManager,
 		lastActivityTime:       time.Now(),
+	}
+}
+
+func (ps *parkingSlot) checkInbox() {
+	inboxesCount, err := ps.phyPartitionManager.FetchInboxes()
+	if err != nil {
+		log.Printf("[ERROR] failed fetching parked inbox %s", err)
+	} else if inboxesCount != 0 {
+		ps.passivationResultQueue <- passivationResult{
+			phyPartitionId:     ps.phyPartitionManager.GetId(),
+			successfullyParked: false,
+			isQueueEmpty:       false,
+		}
 	}
 }
 

@@ -5,6 +5,9 @@ import (
 	"main/dynamoutils"
 	"main/utils"
 	"main/worker/domain"
+	"main/worker/plugins"
+	"math/rand/v2"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -75,17 +78,37 @@ func HotelReservationLoadInboxesAndTasks(parameters *HotelReservationParameters,
 }
 
 func SlowlyLoadInboxes(
-	newMessages []utils.Pair[domain.ActorMessage, domain.ActorId], client *dynamodb.Client,
+	newMessages []utils.Pair[domain.ActorMessage, domain.ActorId], client *dynamodb.Client, runId string,
 	sendingPeriod time.Duration, maxRequestsPerPeriod int, initialDelay time.Duration) error {
 
 	requestQueue := make(chan utils.Pair[domain.ActorMessage, domain.ActorId], maxRequestsPerPeriod)
 	var wg sync.WaitGroup
+	var httpClient = &http.Client{}
+	var timeServerFactory = plugins.NewTimestampCollectorFactoryImpl(httpClient, "http://127.0.0.1:8080")
+
 	for range maxRequestsPerPeriod {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			var timeServer = timeServerFactory.BuildTimestampCollector()
 			for request := range requestQueue {
+				// log.Printf("Request type: %T", request.First.Content)
+				if bookingRequest, ok := (request.First.Content).(domain.BookingRequest); ok {
+					// log.Printf("req: %s", bookingRequest.RequestId)
+					err := timeServer.StartMeasurement(runId + "/" + bookingRequest.RequestId)
+					if err != nil {
+						log.Printf("[ERROR] Time Server error: %s", err)
+					}
+				} else if bankingRequest, ok := request.First.Content.(domain.TransactionRequest); ok {
+					err := timeServer.StartMeasurement(runId + "/" + bankingRequest.TransactionId)
+					if err != nil {
+						log.Printf("[ERROR] Time Server error: %s", err)
+					}
+				} else {
+					log.Printf("unknown req (%T): %s", request.First.Content, request.First.Content)
+				}
 				localErr := dynamoutils.AddMessage(client, request.First, request.Second)
+
 				if localErr != nil {
 					log.Printf("Could not add the message %v: %v\n", request.First.Id, localErr)
 				}
@@ -94,15 +117,18 @@ func SlowlyLoadInboxes(
 	}
 
 	time.Sleep(initialDelay)
+	start := time.Now()
+	var ticker = time.NewTicker(sendingPeriod)
 	i := 0
 	for {
 		endExcludedIndex := min(i+maxRequestsPerPeriod, len(newMessages))
+
+		log.Printf("%d..%d\t(%d) - %s", i, endExcludedIndex, len(newMessages), time.Since(start))
 
 		messageBatch := newMessages[i:endExcludedIndex]
 
 		for _, message := range messageBatch {
 			requestQueue <- message
-			time.Sleep(sendingPeriod / time.Duration(maxRequestsPerPeriod))
 		}
 
 		i = endExcludedIndex
@@ -110,10 +136,12 @@ func SlowlyLoadInboxes(
 		if i >= len(newMessages) {
 			break
 		}
+
+		<-ticker.C
 	}
 
-	wg.Wait()
 	close(requestQueue)
+	wg.Wait()
 
 	return nil
 }
@@ -151,6 +179,9 @@ func HotelReservationBuildInboxesAndTasks(parameters *HotelReservationParameters
 						roomType = domain.PREMIUM
 					}
 
+					hotelId := buildHotelId(dstHotelPartitionIndex, dstHotelShardIndex, dstHotelIndex)
+					requestId := userId.String() + "#" + hotelId.String() + ":" + strconv.FormatInt(rand.Int64(), 16)
+
 					message := domain.ActorMessage{
 						Id: domain.MessageIdentifier{
 							ActorId:         userId,
@@ -161,9 +192,10 @@ func HotelReservationBuildInboxesAndTasks(parameters *HotelReservationParameters
 							PhyPartitionId: domain.PhysicalPartitionId{PartitionName: "", PhysicalPartitionName: ""},
 						},
 						Content: domain.BookingRequest{
-							UserId:   userId,
-							HotelId:  buildHotelId(dstHotelPartitionIndex, dstHotelShardIndex, dstHotelIndex),
-							RoomType: roomType,
+							RequestId: requestId,
+							UserId:    userId,
+							HotelId:   hotelId,
+							RoomType:  roomType,
 							BookingPeriod: domain.BookingPeriod{
 								Week:      strconv.Itoa(userInteractionSeed % parameters.ActiveWeeksCount),
 								DayOfWeek: userInteractionSeed % 7,

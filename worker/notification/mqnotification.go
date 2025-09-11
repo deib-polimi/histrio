@@ -163,7 +163,7 @@ func NewMQReceiver(workerId string) (*MQReceiver, error) {
 
 }
 
-func (l *MQReceiver) Start(outputChannel chan<- time.Time) error {
+func (l *MQReceiver) Start(outputChannels ...chan<- time.Time) error {
 	log.Printf("AMQP started receiver for queue %s", l.q.Name)
 	msgs, err := l.ch.Consume(
 		l.q.Name, // queue
@@ -180,10 +180,12 @@ func (l *MQReceiver) Start(outputChannel chan<- time.Time) error {
 
 	for d := range msgs {
 		if d.ContentType == "notification" {
-			// log.Printf("AMQP notification")
-			select { // Non-blocking send
-			case outputChannel <- time.Now():
-			default:
+			t := time.Now()
+			for _, channel := range outputChannels {
+				select { // Non-blocking send
+				case channel <- t:
+				default:
+				}
 			}
 		} else {
 			log.Printf("Invalid content type for notification")

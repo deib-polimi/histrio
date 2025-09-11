@@ -1,66 +1,99 @@
 package request_sender
 
 import (
-	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"log"
 	"main/baseline/banking/model"
 	"main/baseline/banking/services"
-	"main/benchmark"
 	"main/lambdautils"
+	"main/worker/plugins"
 	"math/rand"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 )
 
 func SendAndMeasureBaselineBankingRequests(
 	params BaselineBankingRequestsParameters,
 	sender RequestSender[model.TransactionRequest, model.TransactionResponse],
-	timeLogger *benchmark.RequestTimeLoggerImpl) {
+	runId string) {
 
-	var requestSenderWg sync.WaitGroup
+	requestQueue := make(chan model.TransactionRequest, params.MaxConcurrentRequests)
+	var wg sync.WaitGroup
+	var httpClient = &http.Client{}
+	var timeServerFactory = plugins.NewTimestampCollectorFactoryImpl(httpClient, "http://127.0.0.1:8080")
 
-	timeLogger.Start()
-	defer timeLogger.Stop()
-
-	inputQueue := make(chan model.TransactionRequest, params.MaxConcurrentRequests)
 	for range params.MaxConcurrentRequests {
-		requestSenderWg.Add(1)
-		go handleBankingRequest(inputQueue, &requestSenderWg, sender, timeLogger)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bankingRequestRoutine(timeServerFactory, sender, requestQueue, runId)
+		}()
 	}
 
+	log.Printf("Generating messages...")
+	newMessages := make([]model.TransactionRequest, 0)
 	for i := range params.ActiveAccountsCount {
-		for j, transactionRequest := range buildBankingRequestsForUser(i, params) {
-			if j%params.MaxConcurrentRequests == 0 && params.SendingPeriodMillis != -1 {
-				time.Sleep(time.Duration(params.SendingPeriodMillis) * time.Millisecond)
-			}
-			inputQueue <- transactionRequest
-		}
+		newMessages = append(newMessages, buildBankingRequestsForUser(i, params)...)
 	}
-	close(inputQueue)
-	requestSenderWg.Wait()
+	log.Printf("Starting in 1s...")
+
+	time.Sleep(time.Duration(1000) * time.Millisecond)
+	start := time.Now()
+	var ticker = time.NewTicker(time.Duration(params.SendingPeriodMillis) * time.Millisecond)
+
+	i := 0
+	for {
+		endExcludedIndex := min(i+params.MaxConcurrentRequests, len(newMessages))
+
+		log.Printf("%d..%d\t(%d) - %s", i, endExcludedIndex, len(newMessages), time.Since(start))
+
+		messageBatch := newMessages[i:endExcludedIndex]
+
+		for _, message := range messageBatch {
+			requestQueue <- message
+		}
+
+		i = endExcludedIndex
+
+		if i >= len(newMessages) {
+			break
+		}
+
+		<-ticker.C
+	}
+
+	close(requestQueue)
+	wg.Wait()
 
 }
 
-func handleBankingRequest(inputChannel chan model.TransactionRequest, wg *sync.WaitGroup,
-	requestSender RequestSender[model.TransactionRequest, model.TransactionResponse],
-	timeLogger *benchmark.RequestTimeLoggerImpl) {
-	for transactionRequest := range inputChannel {
-		err := timeLogger.LogStartRequest(transactionRequest.TransactionId)
+func bankingRequestRoutine(timeServerFactory *plugins.TimestampCollectorFactoryImpl, requestSender RequestSender[model.TransactionRequest, model.TransactionResponse], requestQueue <-chan model.TransactionRequest, runId string) {
+	var timeServer = timeServerFactory.BuildTimestampCollector()
+	for request := range requestQueue {
+		// log.Printf("Request type: %T", request.First.Content)
+		err := timeServer.StartMeasurement(runId + "/" + request.TransactionId)
+
 		if err != nil {
-			log.Printf("Could not log the start request %v: %v\n", transactionRequest.TransactionId, err)
+			log.Printf("Could not log the start request %v: %v\n", request.TransactionId, err)
 		}
-		_, err = requestSender.Send(transactionRequest)
+		makeBankingRequest(request, requestSender)
+		err = timeServer.EndMeasurement(runId + "/" + request.TransactionId)
+
 		if err != nil {
-			log.Printf("Failed to execute request with id %v: %v\n", transactionRequest.TransactionId, err)
-		}
-		err = timeLogger.LogEndRequest(transactionRequest.TransactionId)
-		if err != nil {
-			log.Printf("Could not log the end request %v: %v\n", transactionRequest.TransactionId, err)
+			log.Printf("Could not log the end request %v: %v\n", request.TransactionId, err)
 		}
 	}
-	wg.Done()
+}
+func makeBankingRequest(transactionRequest model.TransactionRequest,
+	requestSender RequestSender[model.TransactionRequest, model.TransactionResponse]) {
 
+	_, err := requestSender.Send(transactionRequest)
+	if err != nil {
+		log.Printf("Failed to execute request with id %v: %v\n", transactionRequest.TransactionId, err)
+	}
 }
 
 func buildBankingRequestsForUser(accountIndex int, params BaselineBankingRequestsParameters) []model.TransactionRequest {

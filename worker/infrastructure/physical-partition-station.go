@@ -89,6 +89,7 @@ func (ps *PhysicalPartitionStation) Start() {
 		case newPhyPartitions := <-ps.newPhyPartitionsQueue:
 			for _, newPhyPartition := range newPhyPartitions {
 				ps.phyPartitionsLoci[newPhyPartition.GetId()] = newPhysicalPartitionLocus(newPhyPartition, ps.activeActorsCountUpdateSignal, ps.processingQueue, ps.idleQueue, ps.useBackoffStrategy, ps.idleMillisecondsToWaitBeforeParking)
+				ps.phyPartitionsLoci[newPhyPartition.GetId()].slot.notifySignal <- time.Now()
 				//log.Printf("PhyPartition %v entered the station\n", newPhyPartition.GetId().String())
 			}
 			ps.isPullingRequestPending = false
@@ -160,7 +161,7 @@ func (ps *PhysicalPartitionStation) Start() {
 			// lastAct = time.Now()
 			for _, locus := range ps.phyPartitionsLoci {
 				select {
-				case locus.slot.pollInboxSignal <- tNotify:
+				case locus.slot.notifySignal <- tNotify:
 				default:
 				}
 			}
@@ -203,7 +204,7 @@ func newPhysicalPartitionLocus(phyManager domain.PhysicalPartitionManager,
 	activeActorsCountUpdateSignal chan<- ActiveActorsUpdate, processingQueue chan<- domain.ActorManager,
 	idleQueue chan<- domain.PhysicalPartitionId, useBackoffStrategy bool, idleMillisecondsToWaitBeforeParking int64) *physicalPartitionLocus {
 	slot := newPhysicalPartitionSlot(phyManager, activeActorsCountUpdateSignal, processingQueue, idleQueue, useBackoffStrategy, idleMillisecondsToWaitBeforeParking)
-	slot.Start()
+	go slot.Start()
 	return &physicalPartitionLocus{
 		slot:                slot,
 		allocationTimestamp: time.Now(),
@@ -264,6 +265,7 @@ func (p *physicalPartitionReleaseRequest) contains(id domain.PhysicalPartitionId
 type physicalPartitionSlot struct {
 	completedActorManagersQueue chan domain.ActorManager
 	pollInboxSignal             chan time.Time
+	notifySignal                chan time.Time
 	terminationSignal           chan struct{}
 
 	processingQueue               chan<- domain.ActorManager
@@ -276,6 +278,7 @@ type physicalPartitionSlot struct {
 	backoffCyclesToWait int //phyPartition needs to wait for backoffCyclesToWait periodic signals before polling
 	lastBackoffDelay    int
 	needsToStop         bool //external system asked this phyPartitionSlot to stop processing
+	active              bool
 	activeActorsCount   int
 
 	lastMessageProcessedTime            time.Time
@@ -289,8 +292,11 @@ func newPhysicalPartitionSlot(
 	idleMillisecondsToWaitBeforeParking int64) *physicalPartitionSlot {
 	return &physicalPartitionSlot{
 		completedActorManagersQueue:         make(chan domain.ActorManager, 10000),
-		pollInboxSignal:                     make(chan time.Time, 2),
+		pollInboxSignal:                     make(chan time.Time, 1),
+		notifySignal:                        make(chan time.Time, 1),
 		terminationSignal:                   make(chan struct{}, 1),
+		needsToStop:                         false,
+		active:                              true,
 		processingQueue:                     processingQueue,
 		activeActorsCountUpdateSignal:       activeActorsCountUpdateSignal,
 		idleQueue:                           idleQueue,
@@ -304,80 +310,102 @@ func newPhysicalPartitionSlot(
 }
 
 func (ps *physicalPartitionSlot) Start() {
-	go func() {
-		stop := false
-		for {
-			if stop {
+	for {
+		if !ps.active {
+			break
+		}
+
+		select {
+		case <-ps.pollInboxSignal: //polling inboxes and check for phyPartition termination
+			err := ps.fetchInboxes()
+			if err != nil {
+				log.Printf("[ERROR] Partition slot error %s", err)
 				break
 			}
-
-			select {
-			case <-ps.pollInboxSignal: //polling inboxes and check for phyPartition termination
-				canPoll := true
-				if ps.useBackoffStrategy {
-					canPoll = !ps.needsToStop && ps.backoffCyclesToWait == 0
-				} else {
-					canPoll = !ps.needsToStop
-				}
-				if canPoll {
-					newMessagesPolled, err := ps.phyPartitionManager.FetchInboxes()
-
-					if err != nil {
-						break
-					}
-
-					if newMessagesPolled == 0 {
-						ps.lastBackoffDelay *= 2
-						ps.backoffCyclesToWait = ps.lastBackoffDelay
-					} else {
-						ps.lastMessageProcessedTime = time.Now()
-					}
-				} else {
-					ps.backoffCyclesToWait--
-				}
-				for _, actorManager := range ps.phyPartitionManager.PopReadyActorManagers() {
-					ps.processingQueue <- actorManager
-				}
-
-				actorsCount := ps.phyPartitionManager.GetActiveActorsCount()
-				if actorsCount != ps.lastActiveActorsCountUpdateValue {
-					ps.activeActorsCountUpdateSignal <- ActiveActorsUpdate{actorsCount: actorsCount, phyPartitionId: ps.phyPartitionManager.GetId()}
-					ps.lastActiveActorsCountUpdateValue = actorsCount
-				}
-
-				if actorsCount == 0 && time.Since(ps.lastMessageProcessedTime).Milliseconds() > ps.idleMillisecondsToWaitBeforeParking {
-					stop = true
-				}
-
-			case completedActorManager := <-ps.completedActorManagersQueue:
-
-				ps.phyPartitionManager.AcceptCompletedActorManager(completedActorManager)
-
-				for _, actorManager := range ps.phyPartitionManager.PopReadyActorManagers() {
-					ps.processingQueue <- actorManager
-				}
-
-				if ps.phyPartitionManager.GetActiveActorsCount() == 0 {
-					if ps.needsToStop {
-						stop = true
-						break
-					} else {
-						select {
-						case ps.pollInboxSignal <- time.Now():
-						default:
-						}
-					}
-				}
-
-			case <-ps.terminationSignal:
-				ps.needsToStop = true
-
+			for _, actorManager := range ps.phyPartitionManager.PopReadyActorManagers() {
+				ps.processingQueue <- actorManager
 			}
+			ps.checkCounts()
+
+		case <-ps.notifySignal: //polling inboxes and check for phyPartition termination
+			err := ps.fetchInboxes()
+			if err != nil {
+				log.Printf("[ERROR] Partition slot error %s", err)
+				break
+			}
+			for _, actorManager := range ps.phyPartitionManager.PopReadyActorManagers() {
+				ps.processingQueue <- actorManager
+			}
+			ps.checkCounts()
+
+		case completedActorManager := <-ps.completedActorManagersQueue:
+
+			ps.phyPartitionManager.AcceptCompletedActorManager(completedActorManager)
+
+			for _, actorManager := range ps.phyPartitionManager.PopReadyActorManagers() {
+				ps.processingQueue <- actorManager
+			}
+
+			if ps.phyPartitionManager.GetActiveActorsCount() == 0 {
+				if ps.needsToStop {
+					ps.active = false
+					log.Printf("deactivating slot...")
+					break
+				} else {
+					// select {
+					// case ps.pollInboxSignal <- time.Now():
+					// default:
+					// }
+				}
+			}
+
+		case <-ps.terminationSignal:
+			ps.needsToStop = true
 
 		}
 
-		ps.idleQueue <- ps.phyPartitionManager.GetId()
-	}()
+	}
+
+	ps.idleQueue <- ps.phyPartitionManager.GetId()
+}
+
+func (ps *physicalPartitionSlot) fetchInboxes() error {
+	canPoll := true
+	if ps.useBackoffStrategy {
+		canPoll = !ps.needsToStop && ps.backoffCyclesToWait == 0
+	} else {
+		canPoll = !ps.needsToStop
+	}
+	if canPoll {
+		newMessagesPolled, err := ps.phyPartitionManager.FetchInboxes()
+
+		if err != nil {
+			return err
+		}
+
+		if newMessagesPolled == 0 {
+			ps.lastBackoffDelay *= 2
+			ps.backoffCyclesToWait = ps.lastBackoffDelay
+		} else {
+			ps.lastMessageProcessedTime = time.Now()
+		}
+	} else {
+		ps.backoffCyclesToWait--
+	}
+	return nil
+}
+
+func (ps *physicalPartitionSlot) checkCounts() {
+	actorsCount := ps.phyPartitionManager.GetActiveActorsCount()
+	if actorsCount != ps.lastActiveActorsCountUpdateValue {
+		ps.activeActorsCountUpdateSignal <- ActiveActorsUpdate{actorsCount: actorsCount, phyPartitionId: ps.phyPartitionManager.GetId()}
+		ps.lastActiveActorsCountUpdateValue = actorsCount
+	}
+
+	if actorsCount == 0 && time.Since(ps.lastMessageProcessedTime).Milliseconds() > ps.idleMillisecondsToWaitBeforeParking {
+		log.Printf("deactivating slot...")
+		ps.active = false
+	}
 }
 
 type ActiveActorsUpdate struct {

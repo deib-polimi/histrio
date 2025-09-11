@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/rand/v2"
 	"reflect"
 	"strconv"
 	"strings"
@@ -359,10 +358,6 @@ func (u *User) ReceiveMessage(message Message) error {
 }
 
 func (u *User) onBookingRequest(bookingRequest BookingRequest) error {
-	requestId := u.GetId().String() + "#" + bookingRequest.HotelId.String() + strconv.Itoa(u.Counter) + ":" + strconv.FormatInt(rand.Int64(), 16)
-	u.BenchmarkHelper.StartMeasurement(requestId, "")
-	u.Counter++
-	bookingRequest.RequestId = requestId
 	u.MessageSender.Tell(bookingRequest, bookingRequest.HotelId)
 	return nil
 }
@@ -435,7 +430,7 @@ func (bb *BankBranch) ReceiveMessage(message Message) error {
 }
 
 func (bb *BankBranch) onTransactionRequest(transactionRequest TransactionRequest) error {
-	bb.BenchmarkHelper.StartMeasurement(transactionRequest.TransactionId, "")
+	// bb.BenchmarkHelper.StartMeasurement(transactionRequest.TransactionId, "")
 	srcAccount, err := bb.Accounts.Get(transactionRequest.SourceIban)
 	if err != nil {
 		return err

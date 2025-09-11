@@ -1,47 +1,100 @@
 package request_sender
 
 import (
-	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"log"
 	"main/baseline/hotel-reservation/model"
 	"main/baseline/hotel-reservation/services"
-	"main/benchmark"
 	"main/lambdautils"
-	"math/rand"
+	"main/worker/plugins"
+	"math/rand/v2"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 )
 
 func SendAndMeasureBaselineBookingRequests(
 	params BaselineBookingRequestsParameters,
 	sender RequestSender[model.BookingRequest, model.BookingResponse],
-	timeLogger *benchmark.RequestTimeLoggerImpl) {
+	runId string) {
 
-	var requestSenderWg sync.WaitGroup
+	requestQueue := make(chan model.BookingRequest, params.MaxConcurrentRequests)
+	var wg sync.WaitGroup
+	var httpClient = &http.Client{}
+	var timeServerFactory = plugins.NewTimestampCollectorFactoryImpl(httpClient, "http://127.0.0.1:8080")
 
-	timeLogger.Start()
-	defer timeLogger.Stop()
-
-	inputQueue := make(chan model.BookingRequest, params.MaxConcurrentRequests)
 	for range params.MaxConcurrentRequests {
-		requestSenderWg.Add(1)
-		go handleBookingRequest(inputQueue, &requestSenderWg, sender, timeLogger)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			requestRoutine(timeServerFactory, sender, requestQueue, runId)
+		}()
 	}
 
 	hotelSeed := 0
 	weekSeed := 0
+	log.Printf("Generating messages...")
+	newMessages := make([]model.BookingRequest, 0)
 	for i := range params.ActiveUsersCount {
-		for j, bookingRequest := range buildBookingRequestsForUser(i, params, &hotelSeed, &weekSeed) {
-			if j%params.MaxConcurrentRequests == 0 && params.SendingPeriodMillis != -1 {
-				time.Sleep(time.Duration(params.SendingPeriodMillis) * time.Millisecond)
-			}
-			inputQueue <- bookingRequest
+		newMessages = append(newMessages, buildBookingRequestsForUser(i, params, &hotelSeed, &weekSeed)...)
+	}
+	log.Printf("Starting in 1s...")
+
+	time.Sleep(time.Duration(1000) * time.Millisecond)
+	start := time.Now()
+	var ticker = time.NewTicker(time.Duration(params.SendingPeriodMillis) * time.Millisecond)
+
+	i := 0
+	for {
+		endExcludedIndex := min(i+params.MaxConcurrentRequests, len(newMessages))
+
+		log.Printf("%d..%d\t(%d) - %s", i, endExcludedIndex, len(newMessages), time.Since(start))
+
+		messageBatch := newMessages[i:endExcludedIndex]
+
+		for _, message := range messageBatch {
+			requestQueue <- message
+		}
+
+		i = endExcludedIndex
+
+		if i >= len(newMessages) {
+			break
+		}
+
+		<-ticker.C
+	}
+
+	close(requestQueue)
+	wg.Wait()
+
+}
+
+func requestRoutine(timeServerFactory *plugins.TimestampCollectorFactoryImpl, requestSender RequestSender[model.BookingRequest, model.BookingResponse], requestQueue <-chan model.BookingRequest, runId string) {
+	var timeServer = timeServerFactory.BuildTimestampCollector()
+	for request := range requestQueue {
+		// log.Printf("Request type: %T", request.First.Content)
+		err := timeServer.StartMeasurement(runId + "/" + request.RequestId)
+
+		if err != nil {
+			log.Printf("Could not log the start request %v: %v\n", request.RequestId, err)
+		}
+		makeBookingRequest(request, requestSender)
+		err = timeServer.EndMeasurement(runId + "/" + request.RequestId)
+
+		if err != nil {
+			log.Printf("Could not log the end request %v: %v\n", request.RequestId, err)
 		}
 	}
-	close(inputQueue)
-	requestSenderWg.Wait()
+}
 
+func makeBookingRequest(bookingRequest model.BookingRequest, requestSender RequestSender[model.BookingRequest, model.BookingResponse]) {
+	_, err := requestSender.Send(bookingRequest)
+	if err != nil {
+		log.Printf("Failed to execute request with id %v: %v\n", bookingRequest.RequestId, err)
+	}
 }
 
 func buildBookingRequestsForUser(userIndex int, params BaselineBookingRequestsParameters, hotelSeed *int, weekSeed *int) []model.BookingRequest {
@@ -58,15 +111,16 @@ func buildBookingRequestsForUser(userIndex int, params BaselineBookingRequestsPa
 
 		userId := "User/" + strconv.Itoa(userIndex)
 		hotelId := "Hotel/" + strconv.Itoa(*hotelSeed)
+		requestId := userId + "#" + hotelId + ":" + strconv.FormatInt(rand.Int64(), 16)
 		weekId := strconv.Itoa(*weekSeed)
-		dayOfWeek := rand.Intn(7)
-		salt := rand.Intn(100)
+		dayOfWeek := rand.IntN(7)
+		salt := rand.IntN(100)
 		roomType := model.STANDARD
 		if salt%2 == 0 {
 			roomType = model.PREMIUM
 		}
 		bookingRequests = append(bookingRequests, model.BookingRequest{
-			RequestId: userId + "->" + hotelId + "->" + weekId + "->" + strconv.Itoa(dayOfWeek) + "#" + strconv.Itoa(rand.Intn(100)),
+			RequestId: requestId,
 			UserId:    userId,
 			HotelId:   hotelId,
 			RoomType:  roomType,
@@ -79,26 +133,6 @@ func buildBookingRequestsForUser(userIndex int, params BaselineBookingRequestsPa
 	}
 
 	return bookingRequests
-}
-
-func handleBookingRequest(inputChannel chan model.BookingRequest, wg *sync.WaitGroup,
-	requestSender RequestSender[model.BookingRequest, model.BookingResponse],
-	timeLogger *benchmark.RequestTimeLoggerImpl) {
-	for bookingRequest := range inputChannel {
-		err := timeLogger.LogStartRequest(bookingRequest.RequestId)
-		if err != nil {
-			log.Printf("Could not log the start request %v: %v\n", bookingRequest.RequestId, err)
-		}
-		_, err = requestSender.Send(bookingRequest)
-		if err != nil {
-			log.Printf("Failed to execute request with id %v: %v\n", bookingRequest.RequestId, err)
-		}
-		err = timeLogger.LogEndRequest(bookingRequest.RequestId)
-		if err != nil {
-			log.Printf("Could not log the end request %v: %v\n", bookingRequest.RequestId, err)
-		}
-	}
-	wg.Done()
 }
 
 type RequestSender[R any, S any] interface {

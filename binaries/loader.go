@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"log"
 	bankingdb "main/baseline/banking/db"
 	bankingservices "main/baseline/banking/services"
@@ -29,6 +28,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 func main() {
@@ -80,9 +81,9 @@ func main() {
 	} else if slices.Contains(args, "sutBankingLoadMessages") {
 		err = loadBankingInboxesAndTasks(client)
 	} else if slices.Contains(args, "baselineHotelSendMessages") {
-		err = sendBaselineHotelReservationRequests(client, isLocalDeployment, runSpecificParams.RunId, runSpecificParams.ConcurrentLogsCount)
+		err = sendBaselineHotelReservationRequests(client, isLocalDeployment, runSpecificParams.RunId)
 	} else if slices.Contains(args, "baselineBankingSendMessages") {
-		err = sendBaselineBankingRequests(client, isLocalDeployment, runSpecificParams.RunId, runSpecificParams.ConcurrentLogsCount)
+		err = sendBaselineBankingRequests(client, isLocalDeployment, runSpecificParams.RunId)
 	} else if slices.Contains(args, "sutRunWorkers") {
 		err = startWorkers(isLocalDeployment, runSpecificParams.RunId)
 	} else if slices.Contains(args, "timeServer") {
@@ -161,7 +162,7 @@ func startHotelLatencyBenchmark(client *dynamodb.Client, isLocalDeployment bool,
 		return err
 	}
 
-	slowLoadingParamsBytes, err := os.ReadFile(path.Join(getParamsPath(), "sut-hotel-reservation-slow-loading-params.json"))
+	slowLoadingParamsBytes, err := os.ReadFile(path.Join(getParamsPath(), "slow-loading-params.json"))
 	if err != nil {
 		return err
 	}
@@ -198,6 +199,7 @@ func startHotelLatencyBenchmark(client *dynamodb.Client, isLocalDeployment bool,
 	return sut.SlowlyLoadInboxes(
 		newMessage,
 		client,
+		runId,
 		time.Duration(slowLoadingParams.SendingPeriodMillis)*time.Millisecond,
 		slowLoadingParams.MaxRequestsPerPeriod,
 		time.Duration(slowLoadingParams.InitialDelayMillis)*time.Millisecond,
@@ -248,6 +250,7 @@ func startBankingLatencyBenchmark(client *dynamodb.Client, isLocalDeployment boo
 	return sut.SlowlyLoadInboxes(
 		newMessage,
 		client,
+		runId,
 		time.Duration(slowLoadingParams.SendingPeriodMillis)*time.Millisecond,
 		slowLoadingParams.MaxRequestsPerPeriod,
 		time.Duration(slowLoadingParams.InitialDelayMillis)*time.Millisecond,
@@ -284,57 +287,56 @@ func loadBankingInboxesAndTasks(client *dynamodb.Client) error {
 	return sut.BankingLoadInboxesAndTasks(parameters, client)
 }
 
-func sendBaselineHotelReservationRequests(client *dynamodb.Client, isLocalDeployment bool, runId string, concurrentLogsCount int) error {
+func sendBaselineHotelReservationRequests(client *dynamodb.Client, isLocalDeployment bool, runId string) error {
 	b, err := os.ReadFile(path.Join(getParamsPath(), "baseline-hotel-reservation-requests-params.json"))
 	if err != nil {
 		return err
 	}
 	var requestsParameters request_sender.BaselineBookingRequestsParameters
 
-	basePath := getTimeLoggerPath()
-	if isLocalDeployment {
-		basePath = path.Join(filepath.Dir(utils.Root), "log")
-	}
+	// basePath := getTimeLoggerPath()
+	// if isLocalDeployment {
+	// 	basePath = path.Join(filepath.Dir(utils.Root), "log")
+	// }
 
-	timeLogger := benchmark.NewRequestTimeLoggerImpl(basePath, runId, concurrentLogsCount)
+	// timeLogger := benchmark.NewRequestTimeLoggerImpl(basePath, runId, concurrentLogsCount)
 
 	err = json.Unmarshal(b, &requestsParameters)
+	if err != nil {
+		return err
+	}
 	if isLocalDeployment {
 		hotelServiceDao := db.NewHotelDynDao(client, "asdfasdf")
 		hotelService := services.NewReservationService(hotelServiceDao)
-		request_sender.SendAndMeasureBaselineBookingRequests(requestsParameters, request_sender.NewServiceSender(hotelService), timeLogger)
+		request_sender.SendAndMeasureBaselineBookingRequests(requestsParameters, request_sender.NewServiceSender(hotelService), runId)
 		return nil
 	} else {
 		lambdaClient := lambdautils.CreateNewClient()
-		request_sender.SendAndMeasureBaselineBookingRequests(requestsParameters, request_sender.NewLambdaBaselineHotelSender(lambdaClient), timeLogger)
+		request_sender.SendAndMeasureBaselineBookingRequests(requestsParameters, request_sender.NewLambdaBaselineHotelSender(lambdaClient), runId)
 		return nil
 	}
 
 }
 
-func sendBaselineBankingRequests(client *dynamodb.Client, isLocalDeployment bool, runId string, concurrentLogsCount int) error {
+func sendBaselineBankingRequests(client *dynamodb.Client, isLocalDeployment bool, runId string) error {
 	b, err := os.ReadFile(path.Join(getParamsPath(), "baseline-banking-requests-params.json"))
 	if err != nil {
 		return err
 	}
 	var requestsParameters request_sender.BaselineBankingRequestsParameters
 
-	basePath := getTimeLoggerPath()
-	if isLocalDeployment {
-		basePath = path.Join(filepath.Dir(utils.Root), "log")
-	}
-
-	timeLogger := benchmark.NewRequestTimeLoggerImpl(basePath, runId, concurrentLogsCount)
-
 	err = json.Unmarshal(b, &requestsParameters)
+	if err != nil {
+		return err
+	}
 	if isLocalDeployment {
 		bankingServiceDao := bankingdb.NewAccountDynDao(client, "asdfasdf")
 		bankingService := bankingservices.NewBankingService(bankingServiceDao)
-		request_sender.SendAndMeasureBaselineBankingRequests(requestsParameters, request_sender.NewBankingServiceSender(bankingService), timeLogger)
+		request_sender.SendAndMeasureBaselineBankingRequests(requestsParameters, request_sender.NewBankingServiceSender(bankingService), runId)
 		return nil
 	} else {
 		lambdaClient := lambdautils.CreateNewClient()
-		request_sender.SendAndMeasureBaselineBankingRequests(requestsParameters, request_sender.NewLambdaBaselineBankingSender(lambdaClient), timeLogger)
+		request_sender.SendAndMeasureBaselineBankingRequests(requestsParameters, request_sender.NewLambdaBaselineBankingSender(lambdaClient), runId)
 		return nil
 	}
 }
@@ -379,8 +381,8 @@ func startWorkers(isLocalDeployment bool, runId string) error {
 			wg.Add(1)
 			worker := infrastructure.BuildNewWorker(&workerParamsList[i], dynClient, plugins.NewTimestampCollectorFactoryLocalImpl())
 			go func() {
+				defer wg.Done()
 				worker.Run()
-				wg.Done()
 			}()
 		}
 

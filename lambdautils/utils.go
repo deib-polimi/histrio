@@ -3,13 +3,14 @@ package lambdautils
 import (
 	"context"
 	"encoding/json"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"log"
 	bankingmodel "main/baseline/banking/model"
 	"main/baseline/hotel-reservation/model"
 	"main/worker/infrastructure"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 )
 
 func CreateNewClient() *lambda.Client {
@@ -26,6 +27,7 @@ func CreateNewClient() *lambda.Client {
 }
 
 func InvokeWorkerAsync(client *lambda.Client, workerParams infrastructure.WorkerParameters) error {
+	log.Printf("Starting Lambda worker %s with AMQP %t", workerParams.WorkerId, workerParams.Amqp)
 	workerParamsJson, err := json.Marshal(workerParams)
 
 	if err != nil {

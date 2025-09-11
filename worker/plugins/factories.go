@@ -70,9 +70,9 @@ func (tc *TimestampCollectorImpl) EndMeasurement(identifier string) error {
 			panic(myErr)
 		}
 	}(res.Body)
-	bodyBytes, err := io.ReadAll(res.Body)
+	_, err = io.ReadAll(res.Body)
 	if err == nil {
-		log.Printf("Request with id %v ended in %v ns\n", identifier, string(bodyBytes))
+		// log.Printf("Request with id %v ended in %v ns\n", identifier, string(bodyBytes))
 	} else {
 		log.Printf("Request with id %v ended in error '%s'\n", identifier, err)
 	}

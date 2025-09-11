@@ -652,7 +652,7 @@ func TestSlowSender(t *testing.T) {
 
 	newMessages, _ := sut.HotelReservationBuildInboxesAndTasks(parameters)
 
-	err := sut.SlowlyLoadInboxes(newMessages, client, time.Duration(2000)*time.Millisecond, 5, time.Duration(2000)*time.Millisecond)
+	err := sut.SlowlyLoadInboxes(newMessages, client, "testRun", time.Duration(2000)*time.Millisecond, 5, time.Duration(2000)*time.Millisecond)
 
 	if err != nil {
 		t.Fatal(err)

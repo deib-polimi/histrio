@@ -100,11 +100,13 @@ func NewTimeLogger(filePath string, logIdentifier string) *TimeLogger {
 func (tl *TimeLogger) processRequest(request Request) {
 	switch request.requestType {
 	case START:
+		// log.Printf("> START %s", request.identifier)
 		tl.volatileRecords[request.identifier] = Record{
 			identifier:       request.identifier,
 			startRequestTime: request.timestamp,
 		}
 	case END:
+		// log.Printf("> END %s", request.identifier)
 		record, ok := tl.volatileRecords[request.identifier]
 		if !ok {
 			tl.errors += 1
