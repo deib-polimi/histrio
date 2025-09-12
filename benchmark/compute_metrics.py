@@ -70,7 +70,7 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
     ylabel_name = ""
     dash_styles = ["solid", "dashed", "dashdot", (0, (7, 1)), (0, (5, 1, 1, 1, 1, 1))]
     dash_style_index = 0
-    f, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(12, 3.5))
+    f, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(20, 5))
     for df_name, df in selected_datasets:
         label_name = df_name.split("-")[1]
 
@@ -113,7 +113,11 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
                 x="offset_response_time",
                 label=label_name,
                 linestyle=dash_styles[dash_style_index],
-                alpha=0.9,
+                cut=0,
+                fill=True,
+                clip=(0, None),
+                linewidth=2,
+                alpha=0.1,
                 ax=ax2,
             )
             sns.kdeplot(
@@ -122,6 +126,8 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
                 label=label_name,
                 linestyle=dash_styles[dash_style_index],
                 alpha=0.9,
+                cut=0,
+                clip=(0, None),
                 cumulative=True,
                 ax=ax3,
             )
@@ -256,157 +262,43 @@ def compute_average_latency(df):
 def define_experiments():
     experiments = {
         # HISTRIO2 LATENCY experiments
-        "histrio2_7000ms": {
-            "folder": "TEST_HISTRIO2_LATENCY",
-            "display_name": "4 Workers 7000ms",
-            "workers": 4,
+        "h1000noq": {
+            "display_name": "New 1000ms",
             "type": "latency",
             "logs_count": 4,
         },
-        "histrio2_1000ms": {
-            "folder": "TEST_HISTRIO2_LATENCY_1000ms",
-            "display_name": "4 Workers 1000ms",
-            "workers": 4,
+        "h1000mq": {
+            "display_name": "New 1000ms + MQ",
             "type": "latency",
             "logs_count": 4,
         },
-        "histrio2_b_1000ms": {
-            "folder": "TEST_HISTRIO2_LATENCY_B_1000ms",
-            "display_name": "4 Workers(B) 1000ms",
-            "workers": 4,
+        "h1000mq2": {
+            "display_name": "New 1000ms + MQ + N",
             "type": "latency",
             "logs_count": 4,
         },
-        "histrio2_b_100ms": {
-            "folder": "TEST_HISTRIO2_LATENCY_B_100ms",
-            "display_name": "4 Workers(B) 100ms",
-            "workers": 4,
+        "h100mq": {
+            "display_name": "New 100ms + MQ",
             "type": "latency",
             "logs_count": 4,
         },
-        "histrio2_amqp": {
-            "folder": "TEST_DIS",
-            "display_name": "4 Workers 2000ms AMQP",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "histrio2_amqp_on": {
-            "folder": "TEST_DIS_DELAY_ON",
-            "display_name": "4 Workers 2000ms AMQP(ON)",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "h2_amqp_on": {
-            "folder": "h2_hotel_lat_2k_yq",
-            "display_name": "4 Workers 2000ms AMQP",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "h2_amqp_on2": {
-            "folder": "h2_hotel_lat_2k_yq_t2",
-            "display_name": "4 Workers 2000ms AMQP(2)",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "h2_amqp_off": {
-            "folder": "h2_hotel_lat_2k_noq",
-            "display_name": "4 Workers 2000ms",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "h3": {
-            "folder": "h2_hotel_lat_hf4",
-            "display_name": "4 Workers 2000ms H3",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "newmeasure": {
-            "folder": "newmeasure",
-            "display_name": "4 Workers 1000ms new",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "newmeasure_mq": {
-            "folder": "newmeasure-mq",
-            "display_name": "4 Workers 1000ms new_mq",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "newmeasure4k": {
-            "folder": "newmeasure4k",
-            "display_name": "Pre 4000ms",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "newmeasure4k_mq": {
-            "folder": "newmeasure4k-mq",
-            "display_name": "4 Workers 4000ms new_mq",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "newmeasure4k_mq2": {
-            "folder": "newmeasure4k-mq2",
-            "display_name": "4 Workers 4000ms new_mq2",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "newmeasure4k_mq3": {
-            "folder": "newmeasure4k-mq3",
-            "display_name": "4 Workers 4000ms new_mq3",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "new_mq": {
-            "folder": "new-mq",
-            "display_name": "New MQ 4000ms",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "new_no": {
-            "folder": "new-no",
-            "display_name": "New 4000ms",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "hbase": {
-            "folder": "hbase",
-            "display_name": "Baseline",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "hsut_100ms_mq": {
-            "folder": "hsut_100ms_mq",
-            "display_name": "New MQ 100ms",
-            "workers": 4,
-            "type": "latency",
-            "logs_count": 4,
-        },
-        "hsut_100ms_noq": {
-            "folder": "hsut_100ms_noq",
+        "h100noq": {
             "display_name": "New 100ms",
-            "workers": 4,
             "type": "latency",
             "logs_count": 4,
         },
-                "bsut_1000ms_mq_new": {
-            "folder": "bsut_1000ms_mq_new",
-            "display_name": "New MQ(new) 1000ms",
-            "workers": 4,
+        "h250mq": {
+            "display_name": "New 250ms + MQ",
+            "type": "latency",
+            "logs_count": 4,
+        },
+        "h250mq2": {
+            "display_name": "New 250ms + MQ + N",
+            "type": "latency",
+            "logs_count": 4,
+        },
+        "h250noq": {
+            "display_name": "New 250ms",
             "type": "latency",
             "logs_count": 4,
         },
@@ -429,7 +321,7 @@ def get_dfs_by_name(experiment_ids=None):
             continue
 
         exp = experiments[exp_id]
-        df = aggregate_logs(exp["folder"], exp["logs_count"])
+        df = aggregate_logs(exp_id, exp["logs_count"])
         display_name = f"{exp_id} - {exp['display_name']}"
         dfs_by_name[display_name] = df
 
@@ -445,14 +337,9 @@ def save_thesis_plots(experiments=None, output_filename=None):
         output_filename: Base name for output file (without extension)
     """
     if experiments is None:
+        print("select experiments with -e")
         # Default to histrio2 experiments
-        experiments = [
-            "histrio2_7000ms",
-            "histrio2_1000ms",
-            "histrio2_b_100ms",
-            "histrio2_b_1000ms",
-            "histrio2_amqp",
-        ]
+        exit(-2)
 
     # Get display names for the experiments
     all_experiments = define_experiments()

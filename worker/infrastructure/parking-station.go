@@ -41,7 +41,7 @@ func (p *ParkingStation) Start() {
 				p.parkingSlots[phyPartitionManager.GetId()] = newParkingSlot(p.passivationResultQueue, phyPartitionManager)
 
 			case result := <-p.passivationResultQueue:
-				p.parkingSlots[result.phyPartitionId].isPassivating = false
+				p.parkingSlots[result.phyPartitionId].locked = false
 				if result.successfullyParked {
 					p.releasedPhyPartitionsCountingSignal <- 1
 					log.Printf("Passivated shard %v\n", result.phyPartitionId)
@@ -53,16 +53,17 @@ func (p *ParkingStation) Start() {
 
 			case <-p.parkingPeriodicSignal:
 				for _, slot := range p.parkingSlots {
-					if !slot.isPassivating { //&& time.Since(slot.lastActivityTime) >= time.Duration(p.passivationIntervalMillis)*time.Millisecond {
-						slot.isPassivating = true
-						slot.tryPassivate(time.Duration(p.passivationIntervalMillis) * time.Millisecond)
+					if !slot.locked { //&& time.Since(slot.lastActivityTime) >= time.Duration(p.passivationIntervalMillis)*time.Millisecond {
+						slot.locked = true
+						go slot.tryPassivate(time.Duration(p.passivationIntervalMillis) * time.Millisecond)
 					}
 				}
 
 			case <-p.parkNotifySignal:
 				for _, slot := range p.parkingSlots {
-					if !slot.isPassivating {
-						slot.checkInbox()
+					if !slot.locked {
+						slot.locked = true
+						go slot.checkInbox()
 					}
 				}
 			}
@@ -74,7 +75,7 @@ type parkingSlot struct {
 	passivationResultQueue chan<- passivationResult
 
 	phyPartitionManager domain.PhysicalPartitionManager
-	isPassivating       bool
+	locked              bool
 	lastActivityTime    time.Time
 }
 
@@ -90,11 +91,16 @@ func (ps *parkingSlot) checkInbox() {
 	inboxesCount, err := ps.phyPartitionManager.FetchInboxes()
 	if err != nil {
 		log.Printf("[ERROR] failed fetching parked inbox %s", err)
-	} else if inboxesCount != 0 {
 		ps.passivationResultQueue <- passivationResult{
 			phyPartitionId:     ps.phyPartitionManager.GetId(),
 			successfullyParked: false,
-			isQueueEmpty:       false,
+			isQueueEmpty:       true,
+		}
+	} else {
+		ps.passivationResultQueue <- passivationResult{
+			phyPartitionId:     ps.phyPartitionManager.GetId(),
+			successfullyParked: false,
+			isQueueEmpty:       inboxesCount == 0,
 		}
 	}
 }
