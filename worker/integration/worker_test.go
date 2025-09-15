@@ -406,7 +406,7 @@ func TestPopulateHotelScenario(t *testing.T) {
 		RequestsPerUser:                    10,
 	}
 
-	err := sut.PopulateHotelReservationScenario(parameters, client)
+	err := sut.PopulateHotelReservationScenario(parameters, client, "test")
 
 	if err != nil {
 		t.Fatal(err)
@@ -451,7 +451,7 @@ func TestRunBankingWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = sut.BankingLoadInboxesAndTasks(&bankingParameters, client)
+	err = sut.BankingLoadInboxesAndTasks(&bankingParameters, client, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,7 +652,7 @@ func TestSlowSender(t *testing.T) {
 
 	newMessages, _ := sut.HotelReservationBuildInboxesAndTasks(parameters)
 
-	err := sut.SlowlyLoadInboxes(newMessages, client, "testRun", time.Duration(2000)*time.Millisecond, 5, time.Duration(2000)*time.Millisecond)
+	err := sut.SlowlyLoadInboxes(newMessages, client, "testRun", time.Duration(2000)*time.Millisecond, 5, time.Duration(2000)*time.Millisecond, false)
 
 	if err != nil {
 		t.Fatal(err)

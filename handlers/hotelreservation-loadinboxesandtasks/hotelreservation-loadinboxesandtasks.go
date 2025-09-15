@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"main/benchmark/sut"
 	"main/dynamoutils"
+
+	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 var client *dynamodb.Client
@@ -22,7 +23,7 @@ func handler(_ context.Context, evt json.RawMessage) error {
 		return err
 	}
 
-	err = sut.HotelReservationLoadInboxesAndTasks(parameters, client)
+	err = sut.HotelReservationLoadInboxesAndTasks(parameters, client, "test")
 
 	if err != nil {
 		return err

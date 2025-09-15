@@ -313,7 +313,27 @@ def define_experiments():
         "h1000-mq-0": {
             "display_name": "1000ms + MQ",
             "type": "latency",
-        }
+        },
+        "tb1000-noq-w16-0": {
+            "display_name": "W16",
+            "type": "throughput",
+        },
+        "tb1000-noq-w8-0": {
+            "display_name": "W8",
+            "type": "throughput",
+        },
+        "tb1000-noq-w4-0": {
+            "display_name": "W4",
+            "type": "throughput",
+        },
+        "tb1000-noq-w2-0": {
+            "display_name": "W2",
+            "type": "throughput",
+        },
+        "tb1000-noq-w1-0": {
+            "display_name": "W1",
+            "type": "throughput",
+        },
     }
     return experiments
 
@@ -340,7 +360,7 @@ def get_dfs_by_name(experiment_ids=None):
     return dfs_by_name
 
 
-def save_thesis_plots(experiments=None, output_filename=None):
+def save_thesis_plots(experiments=None, output_filename=None, graph_type="latency"):
     """
     Save plots for selected experiments.
 
@@ -365,10 +385,15 @@ def save_thesis_plots(experiments=None, output_filename=None):
     if output_filename is None:
         output_filename = "experiment_comparison"
 
+    if type == "latency":
+        label = "Latency Comparison"
+    elif type == "throughput":
+        label = "Throughput Comparison"
+    else:
+        label = "Comparison"
+
     # Load data and create plots
-    save_plots_comparison(
-        display_names, "latency", "Latency Comparison", output_filename
-    )
+    save_plots_comparison(display_names, graph_type, label, output_filename)
 
 
 def parse_args():
@@ -382,6 +407,12 @@ def parse_args():
         help="List of experiment IDs to include (default: all histrio2 experiments)",
     )
     parser.add_argument(
+        "--type",
+        "-t",
+        default="latency",
+        help="Graph type",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=str,
@@ -393,4 +424,6 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    save_thesis_plots(experiments=args.experiments, output_filename=args.output)
+    save_thesis_plots(
+        experiments=args.experiments, output_filename=args.output, graph_type=args.type
+    )

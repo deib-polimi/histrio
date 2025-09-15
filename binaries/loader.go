@@ -82,9 +82,9 @@ func main() {
 	} else if slices.Contains(args, "sutHotelStartLatencyBenchmark") {
 		err = startHotelLatencyBenchmark(client, isLocalDeployment, runSpecificParams.RunId)
 	} else if slices.Contains(args, "sutHotelLoadMessages") {
-		err = loadHotelReservationInboxesAndTasks(client)
+		err = loadHotelReservationInboxesAndTasks(client, runSpecificParams.RunId)
 	} else if slices.Contains(args, "sutBankingLoadMessages") {
-		err = loadBankingInboxesAndTasks(client)
+		err = loadBankingInboxesAndTasks(client, runSpecificParams.RunId)
 	} else if slices.Contains(args, "baselineHotelSendMessages") {
 		err = sendBaselineHotelReservationRequests(client, isLocalDeployment, runSpecificParams.RunId)
 	} else if slices.Contains(args, "baselineBankingSendMessages") {
@@ -264,7 +264,7 @@ func startBankingLatencyBenchmark(client *dynamodb.Client, isLocalDeployment boo
 	)
 }
 
-func loadHotelReservationInboxesAndTasks(client *dynamodb.Client) error {
+func loadHotelReservationInboxesAndTasks(client *dynamodb.Client, runId string) error {
 	b, err := os.ReadFile(path.Join(getParamsPath(), "sut-hotel-reservation-params.json"))
 	if err != nil {
 		return err
@@ -276,10 +276,10 @@ func loadHotelReservationInboxesAndTasks(client *dynamodb.Client) error {
 		return err
 	}
 
-	return sut.HotelReservationLoadInboxesAndTasks(parameters, client)
+	return sut.HotelReservationLoadInboxesAndTasks(parameters, client, runId)
 }
 
-func loadBankingInboxesAndTasks(client *dynamodb.Client) error {
+func loadBankingInboxesAndTasks(client *dynamodb.Client, runId string) error {
 	b, err := os.ReadFile(path.Join(getParamsPath(), "sut-banking-params.json"))
 	if err != nil {
 		return err
@@ -291,7 +291,7 @@ func loadBankingInboxesAndTasks(client *dynamodb.Client) error {
 		return err
 	}
 
-	return sut.BankingLoadInboxesAndTasks(parameters, client)
+	return sut.BankingLoadInboxesAndTasks(parameters, client, runId)
 }
 
 func sendBaselineHotelReservationRequests(client *dynamodb.Client, isLocalDeployment bool, runId string) error {

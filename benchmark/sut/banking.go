@@ -4,6 +4,8 @@ import (
 	"main/dynamoutils"
 	"main/utils"
 	"main/worker/domain"
+	"main/worker/plugins"
+	"net/http"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -40,11 +42,19 @@ func BankingLoadState(parameters *BankingParameters, client *dynamodb.Client) er
 	return dynamoutils.AddEntityBatch(client, newEntities)
 }
 
-func BankingLoadInboxesAndTasks(parameters *BankingParameters, client *dynamodb.Client) error {
+func BankingLoadInboxesAndTasks(parameters *BankingParameters, client *dynamodb.Client, runId string) error {
+	var httpClient = &http.Client{}
+	var timeServerFactory = plugins.NewTimestampCollectorFactoryImpl(httpClient, "http://127.0.0.1:8080")
+	var timeServer = timeServerFactory.BuildTimestampCollector()
+
 	newMessages, newTasks := BankingBuildInboxesAndTasks(parameters)
 	err := dynamoutils.AddMessageBatch(client, newMessages)
 	if err != nil {
 		return err
+	}
+
+	for _, request := range newMessages {
+		measureStart(request, timeServer, runId)
 	}
 
 	return dynamoutils.AddActorTaskBatch(client, newTasks)

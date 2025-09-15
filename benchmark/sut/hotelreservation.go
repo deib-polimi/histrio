@@ -67,12 +67,19 @@ func HotelReservationLoadState(parameters *HotelReservationParameters, client *d
 	return dynamoutils.AddEntityBatch(client, newEntities)
 }
 
-func HotelReservationLoadInboxesAndTasks(parameters *HotelReservationParameters, client *dynamodb.Client) error {
+func HotelReservationLoadInboxesAndTasks(parameters *HotelReservationParameters, client *dynamodb.Client, runId string) error {
+	var httpClient = &http.Client{}
+	var timeServerFactory = plugins.NewTimestampCollectorFactoryImpl(httpClient, "http://127.0.0.1:8080")
+	var timeServer = timeServerFactory.BuildTimestampCollector()
 
 	newMessages, newTasks := HotelReservationBuildInboxesAndTasks(parameters)
 	err := dynamoutils.AddMessageBatch(client, newMessages)
 	if err != nil {
 		return err
+	}
+
+	for _, request := range newMessages {
+		measureStart(request, timeServer, runId)
 	}
 
 	return dynamoutils.AddActorTaskBatch(client, newTasks)
@@ -261,13 +268,13 @@ func HotelReservationBuildInboxesAndTasks(parameters *HotelReservationParameters
 
 }
 
-func PopulateHotelReservationScenario(parameters *HotelReservationParameters, client *dynamodb.Client) error {
+func PopulateHotelReservationScenario(parameters *HotelReservationParameters, client *dynamodb.Client, runId string) error {
 	err := HotelReservationLoadState(parameters, client)
 	if err != nil {
 		return err
 	}
 
-	err = HotelReservationLoadInboxesAndTasks(parameters, client)
+	err = HotelReservationLoadInboxesAndTasks(parameters, client, runId)
 	return err
 
 }
