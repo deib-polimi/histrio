@@ -30,10 +30,15 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	args := os.Args
+	err := godotenv.Load()
+	if err != nil {
+		log.Printf("failed loading .env")
+	}
 	var client *dynamodb.Client
 	isLocalDeployment := !slices.Contains(args, "aws")
 	if !isLocalDeployment {
@@ -85,7 +90,7 @@ func main() {
 	} else if slices.Contains(args, "baselineBankingSendMessages") {
 		err = sendBaselineBankingRequests(client, isLocalDeployment, runSpecificParams.RunId)
 	} else if slices.Contains(args, "sutRunWorkers") {
-		err = startWorkers(isLocalDeployment, runSpecificParams.RunId)
+		_, err = startWorkers(isLocalDeployment, runSpecificParams.RunId)
 	} else if slices.Contains(args, "timeServer") {
 		err = startTimeLogServer(isLocalDeployment, runSpecificParams.RunId, runSpecificParams.ConcurrentLogsCount)
 	} else if slices.Contains(args, "randomlyAssignTasks") {
@@ -191,7 +196,7 @@ func startHotelLatencyBenchmark(client *dynamodb.Client, isLocalDeployment bool,
 		return err
 	}
 
-	err = startWorkers(isLocalDeployment, runId)
+	notify, err := startWorkers(isLocalDeployment, runId)
 	if err != nil {
 		return err
 	}
@@ -203,6 +208,7 @@ func startHotelLatencyBenchmark(client *dynamodb.Client, isLocalDeployment bool,
 		time.Duration(slowLoadingParams.SendingPeriodMillis)*time.Millisecond,
 		slowLoadingParams.MaxRequestsPerPeriod,
 		time.Duration(slowLoadingParams.InitialDelayMillis)*time.Millisecond,
+		notify,
 	)
 
 }
@@ -242,7 +248,7 @@ func startBankingLatencyBenchmark(client *dynamodb.Client, isLocalDeployment boo
 		return err
 	}
 
-	err = startWorkers(isLocalDeployment, runId)
+	notify, err := startWorkers(isLocalDeployment, runId)
 	if err != nil {
 		return err
 	}
@@ -254,6 +260,7 @@ func startBankingLatencyBenchmark(client *dynamodb.Client, isLocalDeployment boo
 		time.Duration(slowLoadingParams.SendingPeriodMillis)*time.Millisecond,
 		slowLoadingParams.MaxRequestsPerPeriod,
 		time.Duration(slowLoadingParams.InitialDelayMillis)*time.Millisecond,
+		notify,
 	)
 }
 
@@ -341,17 +348,17 @@ func sendBaselineBankingRequests(client *dynamodb.Client, isLocalDeployment bool
 	}
 }
 
-func startWorkers(isLocalDeployment bool, runId string) error {
+func startWorkers(isLocalDeployment bool, runId string) (bool, error) {
 	b, err := os.ReadFile(path.Join(getParamsPath(), "sut-run-workers.json"))
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	var parallelWorkersInput ParallelWorkersInput
 
 	err = json.Unmarshal(b, &parallelWorkersInput)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	parallelWorkersInput.RunId = runId
@@ -359,7 +366,7 @@ func startWorkers(isLocalDeployment bool, runId string) error {
 	parallelWorkersCount := parallelWorkersInput.ParallelWorkersCount
 
 	if parallelWorkersCount <= 0 {
-		return errors.New("cannot have a non positive number of parallel workers")
+		return false, errors.New("cannot have a non positive number of parallel workers")
 	}
 
 	var workerParamsList []infrastructure.WorkerParameters
@@ -369,7 +376,7 @@ func startWorkers(isLocalDeployment bool, runId string) error {
 		workerParameters.WorkerId = "Worker-" + strconv.Itoa(i)
 		workerParameters.RunId = parallelWorkersInput.RunId
 		if !infrastructure.IsWorkerParametersValid(&workerParameters) {
-			return errors.New("worker parameters are not valid")
+			return false, errors.New("worker parameters are not valid")
 		}
 		workerParamsList = append(workerParamsList, workerParameters)
 	}
@@ -393,12 +400,12 @@ func startWorkers(isLocalDeployment bool, runId string) error {
 		for i := range parallelWorkersCount {
 			err = lambdautils.InvokeWorkerAsync(lambdaClient, workerParamsList[i])
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
 
-	return nil
+	return parallelWorkersInput.WorkerParams.Amqp, nil
 
 }
 

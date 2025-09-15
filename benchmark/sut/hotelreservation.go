@@ -5,6 +5,8 @@ import (
 	"main/dynamoutils"
 	"main/utils"
 	"main/worker/domain"
+	"main/worker/dyndao"
+	"main/worker/notification"
 	"main/worker/plugins"
 	"math/rand/v2"
 	"net/http"
@@ -79,9 +81,19 @@ func HotelReservationLoadInboxesAndTasks(parameters *HotelReservationParameters,
 
 func SlowlyLoadInboxes(
 	newMessages []utils.Pair[domain.ActorMessage, domain.ActorId], client *dynamodb.Client, runId string,
-	sendingPeriod time.Duration, maxRequestsPerPeriod int, initialDelay time.Duration) error {
+	sendingPeriod time.Duration, maxRequestsPerPeriod int, initialDelay time.Duration, notify bool) error {
 
 	requestQueue := make(chan utils.Pair[domain.ActorMessage, domain.ActorId], maxRequestsPerPeriod)
+
+	var amqp *notification.MQNotifier
+	if notify {
+		a, err := notification.NewMQNotifier()
+		if err != nil {
+			log.Panicf("failed to init AMQP notifier %s", err)
+		}
+		amqp = a
+	}
+
 	var wg sync.WaitGroup
 	var httpClient = &http.Client{}
 	var timeServerFactory = plugins.NewTimestampCollectorFactoryImpl(httpClient, "http://127.0.0.1:8080")
@@ -91,23 +103,22 @@ func SlowlyLoadInboxes(
 		go func() {
 			defer wg.Done()
 			var timeServer = timeServerFactory.BuildTimestampCollector()
+			taskDao := dyndao.DynTaskDao{Client: client}
+
 			for request := range requestQueue {
 				// log.Printf("Request type: %T", request.First.Content)
-				if bookingRequest, ok := (request.First.Content).(domain.BookingRequest); ok {
-					// log.Printf("req: %s", bookingRequest.RequestId)
-					err := timeServer.StartMeasurement(runId + "/" + bookingRequest.RequestId)
-					if err != nil {
-						log.Printf("[ERROR] Time Server error: %s", err)
-					}
-				} else if bankingRequest, ok := request.First.Content.(domain.TransactionRequest); ok {
-					err := timeServer.StartMeasurement(runId + "/" + bankingRequest.TransactionId)
-					if err != nil {
-						log.Printf("[ERROR] Time Server error: %s", err)
-					}
-				} else {
-					log.Printf("unknown req (%T): %s", request.First.Content, request.First.Content)
-				}
+				measureStart(request, timeServer, runId)
 				localErr := dynamoutils.AddMessage(client, request.First, request.Second)
+
+				if notify {
+					status, err := taskDao.GetTaskStatus(request.Second.PhyPartitionId)
+					if err != nil {
+						log.Printf("Could not add the message %v: %v\n", request.First.Id, localErr)
+					}
+					if status.WorkerId != "NULL" && status.WorkerId != "" {
+						amqp.Notify(status.WorkerId)
+					}
+				}
 
 				if localErr != nil {
 					log.Printf("Could not add the message %v: %v\n", request.First.Id, localErr)
@@ -144,6 +155,23 @@ func SlowlyLoadInboxes(
 	wg.Wait()
 
 	return nil
+}
+
+func measureStart(request utils.Pair[domain.ActorMessage, domain.ActorId], timeServer domain.TimestampCollector, runId string) {
+	if bookingRequest, ok := (request.First.Content).(domain.BookingRequest); ok {
+		// log.Printf("req: %s", bookingRequest.RequestId)
+		err := timeServer.StartMeasurement(runId + "/" + bookingRequest.RequestId)
+		if err != nil {
+			log.Printf("[ERROR] Time Server error: %s", err)
+		}
+	} else if bankingRequest, ok := request.First.Content.(domain.TransactionRequest); ok {
+		err := timeServer.StartMeasurement(runId + "/" + bankingRequest.TransactionId)
+		if err != nil {
+			log.Printf("[ERROR] Time Server error: %s", err)
+		}
+	} else {
+		log.Printf("unknown req (%T): %s", request.First.Content, request.First.Content)
+	}
 }
 
 func HotelReservationBuildInboxesAndTasks(parameters *HotelReservationParameters) ([]utils.Pair[domain.ActorMessage, domain.ActorId], []domain.PhysicalPartitionId) {
@@ -224,6 +252,10 @@ func HotelReservationBuildInboxesAndTasks(parameters *HotelReservationParameters
 		}
 
 	}
+
+	// rand.Shuffle(len(newMessages), func(i, j int) {
+	// 	newMessages[i], newMessages[j] = newMessages[j], newMessages[i]
+	// })
 
 	return newMessages, newTasks.ToSlice()
 

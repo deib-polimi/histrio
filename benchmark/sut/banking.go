@@ -1,11 +1,12 @@
 package sut
 
 import (
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"main/dynamoutils"
 	"main/utils"
 	"main/worker/domain"
 	"strconv"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 func BankingLoadState(parameters *BankingParameters, client *dynamodb.Client) error {
@@ -85,6 +86,10 @@ func BankingBuildInboxesAndTasks(parameters *BankingParameters) ([]utils.Pair[do
 			}
 		}
 	}
+
+	// rand.Shuffle(len(newMessages), func(i, j int) {
+	// 	newMessages[i], newMessages[j] = newMessages[j], newMessages[i]
+	// })
 
 	return newMessages, newTasks.ToSlice()
 }

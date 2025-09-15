@@ -8,6 +8,7 @@ import seaborn as sns
 import re
 import numpy as np
 import argparse
+from glob import glob
 
 # matplotlib.use('TkAgg')
 
@@ -72,17 +73,17 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
     dash_style_index = 0
     f, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(20, 5))
     for df_name, df in selected_datasets:
-        label_name = df_name.split("-")[1]
+        label_name = df_name.split(" - ")[1]
 
-        match = re.search(r"(\d+)ms", df_name, re.IGNORECASE)
-        if match:
-            offset_value = int(match.group(1))
-            # df["offset"] = offset_value - (df["start_timestamp"].astype(np.int64) / 1000000) % offset_value
-            df["offset"] = offset_value / 2
-        else:
-            df["offset"] = 0
+        # match = re.search(r"(\d+)ms", df_name, re.IGNORECASE)
+        # if match:
+        #     offset_value = int(match.group(1))
+        #     # df["offset"] = offset_value - (df["start_timestamp"].astype(np.int64) / 1000000) % offset_value
+        #     df["offset"] = offset_value / 2
+        # else:
+        #     df["offset"] = 0
 
-        df["offset_response_time"] = df["response_time"]  # + df["offset"]
+        # df["offset_response_time"] = df["response_time"]  # + df["offset"]
 
         if graph_type == "throughput":
             throughput_df = create_throughput_df(df)
@@ -100,7 +101,7 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
             sns_plot = sns.lineplot(
                 data=latency_df,
                 x="seconds",
-                y="offset_response_time",
+                y="response_time",
                 label=label_name,
                 linestyle=dash_styles[dash_style_index],
                 alpha=0.9,
@@ -110,7 +111,7 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
             )
             sns.kdeplot(
                 data=latency_df,
-                x="offset_response_time",
+                x="response_time",
                 label=label_name,
                 linestyle=dash_styles[dash_style_index],
                 cut=0,
@@ -122,13 +123,15 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
             )
             sns.kdeplot(
                 data=latency_df,
-                x="offset_response_time",
+                x="response_time",
                 label=label_name,
                 linestyle=dash_styles[dash_style_index],
+                cut=1,
+                bw_adjust=0.5,
                 alpha=0.9,
-                cut=0,
                 clip=(0, None),
                 cumulative=True,
+                linewidth=2,
                 ax=ax3,
             )
             # if df["offset"].max() > 0:
@@ -139,7 +142,7 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
             sns_plot = sns.lineplot(
                 data=latency_df,
                 x="seconds",
-                y="offset_response_time",
+                y="response_time",
                 label=label_name,
                 linestyle=dash_styles[dash_style_index],
                 alpha=0.9,
@@ -194,13 +197,14 @@ def save_all_latency_plots():
         # plt.show()
 
 
-def aggregate_logs(folder_name, logs_count):
+def aggregate_logs(folder_name):
+
     dataframes = [
         pd.read_csv(
-            "data/" + folder_name + "/" + str(i) + ".log",
+            df,
             names=["request_id", "start_timestamp", "end_timestamp", "response_time"],
         )
-        for i in range(0, logs_count)
+        for df in glob(f"data/{folder_name}/*.log")
     ]
 
     df = pd.concat(dataframes)
@@ -262,46 +266,54 @@ def compute_average_latency(df):
 def define_experiments():
     experiments = {
         # HISTRIO2 LATENCY experiments
-        "h1000noq": {
-            "display_name": "New 1000ms",
+        "b100-noq-0": {
+            "display_name": "100ms",
             "type": "latency",
-            "logs_count": 4,
         },
-        "h1000mq": {
-            "display_name": "New 1000ms + MQ",
+        "b100-mq-0": {
+            "display_name": "100ms + MQ",
             "type": "latency",
-            "logs_count": 4,
         },
-        "h1000mq2": {
-            "display_name": "New 1000ms + MQ + N",
+        "b250-noq-0": {
+            "display_name": "250ms",
             "type": "latency",
-            "logs_count": 4,
         },
-        "h100mq": {
-            "display_name": "New 100ms + MQ",
+        "b250-mq-0": {
+            "display_name": "250ms + MQ",
             "type": "latency",
-            "logs_count": 4,
         },
-        "h100noq": {
-            "display_name": "New 100ms",
+        "b1000-noq-0": {
+            "display_name": "1000ms",
             "type": "latency",
-            "logs_count": 4,
         },
-        "h250mq": {
-            "display_name": "New 250ms + MQ",
+        "b1000-mq-0": {
+            "display_name": "1000ms + MQ",
             "type": "latency",
-            "logs_count": 4,
         },
-        "h250mq2": {
-            "display_name": "New 250ms + MQ + N",
+        "h100-noq-0": {
+            "display_name": "100ms",
             "type": "latency",
-            "logs_count": 4,
         },
-        "h250noq": {
-            "display_name": "New 250ms",
+        "h100-mq-0": {
+            "display_name": "100ms + MQ",
             "type": "latency",
-            "logs_count": 4,
         },
+        "h250-noq-0": {
+            "display_name": "250ms",
+            "type": "latency",
+        },
+        "h250-mq-0": {
+            "display_name": "250ms + MQ",
+            "type": "latency",
+        },
+        "h1000-noq-0": {
+            "display_name": "1000ms",
+            "type": "latency",
+        },
+        "h1000-mq-0": {
+            "display_name": "1000ms + MQ",
+            "type": "latency",
+        }
     }
     return experiments
 
@@ -321,7 +333,7 @@ def get_dfs_by_name(experiment_ids=None):
             continue
 
         exp = experiments[exp_id]
-        df = aggregate_logs(exp_id, exp["logs_count"])
+        df = aggregate_logs(exp_id)
         display_name = f"{exp_id} - {exp['display_name']}"
         dfs_by_name[display_name] = df
 

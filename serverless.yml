@@ -31,7 +31,7 @@ functions:
       artifact: handlers/clocksynchronizer-test/clocksynchronizer-test.zip
     maximumRetryAttempts: 0
     maximumEventAge: 60
-    timeout: 60
+    timeout: 65
     memorySize: 3008
 
   Worker:
@@ -41,7 +41,7 @@ functions:
       artifact: handlers/worker/worker.zip
     maximumRetryAttempts: 0
     maximumEventAge: 60
-    timeout: 60
+    timeout: 65
     memorySize: 3008
     environment:
       WORKER_DATA: /tmp
@@ -56,7 +56,7 @@ functions:
       artifact: handlers/baseline-hotelreservation-service/baseline-hotelreservation-service.zip
     maximumRetryAttempts: 0
     maximumEventAge: 60
-    timeout: 60
+    timeout: 65
     memorySize: 3008
 
   BaselineUserService:
@@ -66,7 +66,7 @@ functions:
       artifact: handlers/baseline-user-service/baseline-user-service.zip
     maximumRetryAttempts: 0
     maximumEventAge: 60
-    timeout: 60
+    timeout: 65
     memorySize: 3008
 
   BaselineBankingService:
@@ -76,7 +76,7 @@ functions:
       artifact: handlers/baseline-banking-service/baseline-banking-service.zip
     maximumRetryAttempts: 0
     maximumEventAge: 60
-    timeout: 60
+    timeout: 65
     memorySize: 3008
 
 
