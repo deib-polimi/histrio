@@ -71,7 +71,7 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
     ylabel_name = ""
     dash_styles = ["solid", "dashed", "dashdot", (0, (7, 1)), (0, (5, 1, 1, 1, 1, 1))]
     dash_style_index = 0
-    f, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(20, 5))
+    f, [ax1, ax2] = plt.subplots(ncols=2, figsize=(12.5, 5))
     for df_name, df in selected_datasets:
         label_name = df_name.split(" - ")[1]
 
@@ -105,22 +105,22 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
                 label=label_name,
                 linestyle=dash_styles[dash_style_index],
                 alpha=0.9,
-                estimator="median",
-                errorbar="pi",
+                estimator="mean",
+                errorbar=None,
                 ax=ax1,
             )
-            sns.kdeplot(
-                data=latency_df,
-                x="response_time",
-                label=label_name,
-                linestyle=dash_styles[dash_style_index],
-                cut=0,
-                fill=True,
-                clip=(0, None),
-                linewidth=2,
-                alpha=0.1,
-                ax=ax2,
-            )
+            # sns.kdeplot(
+            #     data=latency_df,
+            #     x="response_time",
+            #     label=label_name,
+            #     linestyle=dash_styles[dash_style_index],
+            #     cut=0,
+            #     fill=True,
+            #     clip=(0, None),
+            #     linewidth=2,
+            #     alpha=0.1,
+            #     ax=ax2,
+            # )
             sns.kdeplot(
                 data=latency_df,
                 x="response_time",
@@ -132,7 +132,7 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
                 clip=(0, None),
                 cumulative=True,
                 linewidth=2,
-                ax=ax3,
+                ax=ax2,
             )
             # if df["offset"].max() > 0:
             #     sns.lineplot(data=latency_df, x="seconds", y="offset", linestyle="dashed", alpha=0.4, color=sns_plot.get_lines()[-1].get_color(), linewidth=1.5)
@@ -160,7 +160,7 @@ def save_plots_comparison(dataset_names, graph_type, graph_name, file_name):
         dash_style_index = (dash_style_index + 1) % len(dash_styles)
     ax1.legend(bbox_to_anchor=(0.5, -0.25), loc="upper center")
     ax2.legend(bbox_to_anchor=(0.5, -0.25), loc="upper center")
-    ax3.legend(bbox_to_anchor=(0.5, -0.25), loc="upper center")
+    # ax3.legend(bbox_to_anchor=(0.5, -0.25), loc="upper center")
     ax1.xaxis.set_label(xlabel_name)
     ax1.yaxis.set_label(ylabel_name)
 
@@ -265,75 +265,48 @@ def compute_average_latency(df):
 
 def define_experiments():
     experiments = {
-        # HISTRIO2 LATENCY experiments
-        "b100-noq-0": {
-            "display_name": "100ms",
-            "type": "latency",
-        },
-        "b100-mq-0": {
-            "display_name": "100ms + MQ",
-            "type": "latency",
-        },
-        "b250-noq-0": {
-            "display_name": "250ms",
-            "type": "latency",
-        },
-        "b250-mq-0": {
-            "display_name": "250ms + MQ",
-            "type": "latency",
-        },
-        "b1000-noq-0": {
-            "display_name": "1000ms",
-            "type": "latency",
-        },
-        "b1000-mq-0": {
-            "display_name": "1000ms + MQ",
-            "type": "latency",
-        },
-        "h100-noq-0": {
-            "display_name": "100ms",
-            "type": "latency",
-        },
-        "h100-mq-0": {
-            "display_name": "100ms + MQ",
-            "type": "latency",
-        },
-        "h250-noq-0": {
-            "display_name": "250ms",
-            "type": "latency",
-        },
-        "h250-mq-0": {
-            "display_name": "250ms + MQ",
-            "type": "latency",
-        },
-        "h1000-noq-0": {
-            "display_name": "1000ms",
-            "type": "latency",
-        },
-        "h1000-mq-0": {
-            "display_name": "1000ms + MQ",
-            "type": "latency",
-        },
-        "tb1000-noq-w16-0": {
-            "display_name": "W16",
-            "type": "throughput",
-        },
-        "tb1000-noq-w8-0": {
-            "display_name": "W8",
-            "type": "throughput",
-        },
-        "tb1000-noq-w4-0": {
-            "display_name": "W4",
-            "type": "throughput",
-        },
-        "tb1000-noq-w2-0": {
-            "display_name": "W2",
-            "type": "throughput",
-        },
-        "tb1000-noq-w1-0": {
-            "display_name": "W1",
-            "type": "throughput",
-        },
+        # Latency
+        "b100-noq-0": {"name": "100ms", "type": "latency"},
+        "b100-mq-0": {"name": "100ms + MQ", "type": "latency"},
+        "b250-noq-0": {"name": "250ms", "type": "latency"},
+        "b250-mq-0": {"name": "250ms + MQ", "type": "latency"},
+        "b1000-noq-0": {"name": "1000ms", "type": "latency"},
+        "b1000-mq-0": {"name": "1000ms + MQ", "type": "latency"},
+        "h100-noq-0": {"name": "100ms", "type": "latency"},
+        "h100-mq-0": {"name": "100ms + MQ", "type": "latency"},
+        "h250-noq-0": {"name": "250ms", "type": "latency"},
+        "h250-mq-0": {"name": "250ms + MQ", "type": "latency"},
+        "h1000-noq-0": {"name": "1000ms", "type": "latency"},
+        "h1000-mq-0": {"name": "1000ms + MQ", "type": "latency"},
+
+        "base-b-0": {"name": "Baseline", "type": "latency"},
+        "base-h-0": {"name": "Baseline", "type": "latency"},
+
+        # Throughput
+        "tb250-noq-w16-0": {"name": "W16", "type": "throughput"},
+        "tb250-noq-w8-0": {"name": "W8", "type": "throughput"},
+        "tb250-noq-w4-0": {"name": "W4", "type": "throughput"},
+        "tb250-noq-w2-0": {"name": "W2", "type": "throughput"},
+        "tb250-noq-w1-0": {"name": "W1", "type": "throughput"},
+        "th250-noq-w16-0": {"name": "W16", "type": "throughput"},
+        "th250-noq-w8-0": {"name": "W8", "type": "throughput"},
+        "th250-noq-w4-0": {"name": "W4", "type": "throughput"},
+        "th250-noq-w2-0": {"name": "W2", "type": "throughput"},
+        "th250-noq-w1-0": {"name": "W1", "type": "throughput"},
+        
+        "tb1000-noq-w16-0": {"name": "W16", "type": "throughput"},
+        "tb1000-noq-w8-0": {"name": "W8", "type": "throughput"},
+        "tb1000-noq-w4-0": {"name": "W4", "type": "throughput"},
+        "tb1000-noq-w2-0": {"name": "W2", "type": "throughput"},
+        "tb1000-noq-w1-0": {"name": "W1", "type": "throughput"},
+        "th1000-noq-w16-0": {"name": "W16", "type": "throughput"},
+        "th1000-noq-w8-0": {"name": "W8", "type": "throughput"},
+        "th1000-noq-w4-0": {"name": "W4", "type": "throughput"},
+        "th1000-noq-w2-0": {"name": "W2", "type": "throughput"},
+        "th1000-noq-w1-0": {"name": "W1", "type": "throughput"},
+
+        "base-thr-b-0": {"name": "Baseline", "type": "throughput"},
+        "base-thr-h-0": {"name": "Baseline", "type": "throughput"},
     }
     return experiments
 
@@ -354,8 +327,8 @@ def get_dfs_by_name(experiment_ids=None):
 
         exp = experiments[exp_id]
         df = aggregate_logs(exp_id)
-        display_name = f"{exp_id} - {exp['display_name']}"
-        dfs_by_name[display_name] = df
+        name = f"{exp_id} - {exp['name']}"
+        dfs_by_name[name] = df
 
     return dfs_by_name
 
@@ -375,8 +348,8 @@ def save_thesis_plots(experiments=None, output_filename=None, graph_type="latenc
 
     # Get display names for the experiments
     all_experiments = define_experiments()
-    display_names = [
-        f"{exp_id} - {all_experiments[exp_id]['display_name']}"
+    names = [
+        f"{exp_id} - {all_experiments[exp_id]['name']}"
         for exp_id in experiments
         if exp_id in all_experiments
     ]
@@ -393,7 +366,7 @@ def save_thesis_plots(experiments=None, output_filename=None, graph_type="latenc
         label = "Comparison"
 
     # Load data and create plots
-    save_plots_comparison(display_names, graph_type, label, output_filename)
+    save_plots_comparison(names, graph_type, label, output_filename)
 
 
 def parse_args():
